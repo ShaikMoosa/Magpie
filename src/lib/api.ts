@@ -11,6 +11,9 @@ import type {
   Category,
   CategoryInput,
   Counts,
+  Facets,
+  RescanSummary,
+  SecurityOverride,
   NewBookmark,
   PageMeta,
   UpdateBookmark,
@@ -52,6 +55,12 @@ export const api = {
   detectBrowsers: () => invoke<BrowserProfile[]>("detect_browsers"),
   previewImport: (source: ImportSource) => invoke<ImportPreview>("preview_import", { source }),
   startImport: (source: ImportSource, options: ImportOptions) => invoke<ImportSummary>("start_import", { source, options }),
+
+  getFacets: () => invoke<Facets>("get_facets"),
+  rescan: (ids: string[] | null = null) => invoke<RescanSummary>("rescan_bookmarks", { ids }),
+  markSafe: (ids: string[]) => invoke<number>("mark_safe", { ids }),
+  listOverrides: () => invoke<SecurityOverride[]>("list_overrides"),
+  removeOverride: (domain: string) => invoke<void>("remove_override", { domain }),
 
   previewsDir: () => invoke<string>("previews_dir"),
   fetchMetadata: (url: string) => invoke<PageMeta>("fetch_metadata", { url }),

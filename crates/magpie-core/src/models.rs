@@ -124,7 +124,42 @@ pub struct BookmarkQuery {
     pub favourites_only: bool,
     pub security: Option<SecurityStatus>,
     pub domain: Option<String>,
+    /// Every tag must match.
+    pub tags: Vec<String>,
+    /// `Chrome`, `Edge`, `HTML file`, or `manual` for bookmarks added in Magpie.
+    pub source: Option<String>,
+    pub added_within_days: Option<u32>,
     pub limit: Option<u32>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct Facet {
+    pub value: String,
+    pub count: i64,
+}
+
+/// Values available for the filter menus.
+#[derive(Debug, Clone, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Facets {
+    pub domains: Vec<Facet>,
+    pub tags: Vec<Facet>,
+    pub sources: Vec<Facet>,
+    pub security: Vec<Facet>,
+}
+
+#[derive(Debug, Clone, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RescanSummary {
+    pub scanned: usize,
+    pub suspicious: usize,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SecurityOverride {
+    pub domain: String,
+    pub created_at: String,
 }
 
 #[derive(Debug, Clone, Serialize)]

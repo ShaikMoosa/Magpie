@@ -7,7 +7,17 @@ export const keys = {
   bookmarks: (q?: BookmarkQuery) => (q ? ["bookmarks", q] : ["bookmarks"]),
   counts: ["counts"],
   categories: ["categories"],
+  facets: ["facets"],
+  overrides: ["overrides"],
 };
+
+export function useFacets() {
+  return useQuery({ queryKey: keys.facets, queryFn: api.getFacets });
+}
+
+export function useOverrides() {
+  return useQuery({ queryKey: keys.overrides, queryFn: api.listOverrides });
+}
 
 export function useBookmarks(query: BookmarkQuery) {
   return useQuery({ queryKey: keys.bookmarks(query), queryFn: () => api.listBookmarks(query), placeholderData: (p) => p });
@@ -28,6 +38,8 @@ function useInvalidate() {
       qc.invalidateQueries({ queryKey: keys.bookmarks() }),
       qc.invalidateQueries({ queryKey: keys.counts }),
       qc.invalidateQueries({ queryKey: keys.categories }),
+      qc.invalidateQueries({ queryKey: keys.facets }),
+      qc.invalidateQueries({ queryKey: keys.overrides }),
     ]);
 }
 
@@ -120,6 +132,35 @@ export function useSaveCategory() {
       input.id ? api.updateCategory({ ...input, id: input.id }) : api.createCategory(input),
     onSuccess: invalidate,
   });
+}
+
+export function useRescan() {
+  const invalidate = useInvalidate();
+  return useMutation({
+    mutationFn: (ids: string[] | null) => api.rescan(ids),
+    onSuccess: async (r) => {
+      await invalidate();
+      toast({ type: r.suspicious ? "warning" : "success", title: `Checked ${r.scanned.toLocaleString()} bookmark${r.scanned === 1 ? "" : "s"}`, body: r.suspicious ? `${r.suspicious} look suspicious.` : "No warning signs found by local checks." });
+    },
+    onError: onError("Couldn't run the scan"),
+  });
+}
+
+export function useMarkSafe() {
+  const invalidate = useInvalidate();
+  return useMutation({
+    mutationFn: (ids: string[]) => api.markSafe(ids),
+    onSuccess: async () => {
+      await invalidate();
+      toast({ type: "success", title: "Marked as safe", body: "Magpie won't warn about this site again. Undo it in Security Alerts." });
+    },
+    onError: onError("Couldn't update the site"),
+  });
+}
+
+export function useRemoveOverride() {
+  const invalidate = useInvalidate();
+  return useMutation({ mutationFn: (domain: string) => api.removeOverride(domain), onSuccess: invalidate, onError: onError("Couldn't update the site") });
 }
 
 export function useDeleteCategory() {

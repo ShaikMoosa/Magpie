@@ -5,7 +5,8 @@ use rusqlite::{Connection, OptionalExtension, Row, params, params_from_iter, typ
 use crate::db::{new_id, now};
 use crate::error::{Error, Result};
 use crate::models::{
-    Bookmark, BookmarkQuery, Counts, NewBookmark, SecurityStatus, Sort, UpdateBookmark, UrlCheck, View,
+    Bookmark, BookmarkQuery, Counts, Facet, Facets, NewBookmark, RescanSummary, SecurityOverride, SecurityStatus, Sort,
+    UpdateBookmark, UrlCheck, View,
 };
 use crate::{security, urls};
 
@@ -83,7 +84,7 @@ fn ensure_category(conn: &Connection, id: &Option<String>) -> Result<()> {
 /// without saving anything.
 pub fn check_url(conn: &Connection, input: &str, exclude: Option<&str>) -> Result<UrlCheck> {
     let parsed = urls::parse(input)?;
-    let assessment = security::assess(&parsed.url);
+    let assessment = assess(conn, &parsed.url, &parsed.domain)?;
     Ok(UrlCheck {
         url: parsed.url.to_string(),
         duplicate_of: find_duplicate(conn, &parsed.normalized, exclude)?,
@@ -111,7 +112,7 @@ pub(crate) fn insert(conn: &Connection, input: NewBookmark, created_at: Option<&
         return Err(Error::Duplicate { existing_id });
     }
     ensure_category(conn, &input.category_id)?;
-    let assessment = security::assess(&parsed.url);
+    let assessment = assess(conn, &parsed.url, &parsed.domain)?;
     let id = new_id();
     let checked = now();
     let ts = created_at.map(str::to_string).unwrap_or_else(|| checked.clone());
@@ -184,7 +185,7 @@ pub fn update(conn: &Connection, input: UpdateBookmark) -> Result<Bookmark> {
         ],
     )?;
     if url_changed {
-        let a = security::assess(&parsed.url);
+        let a = assess(&tx, &parsed.url, &parsed.domain)?;
         tx.execute(
             "UPDATE bookmarks SET security_status = ?2, security_reasons = ?3, security_source = ?4,
                 security_checked_at = ?5, thumbnail_path = NULL, favicon_path = NULL, metadata_status = NULL
@@ -237,6 +238,26 @@ pub fn list(conn: &Connection, q: &BookmarkQuery) -> Result<Vec<Bookmark>> {
     if let Some(status) = q.security {
         sql.push_str(" AND b.security_status = ?");
         args.push(status.as_str().to_string().into());
+    }
+    for tag in q.tags.iter().filter(|t| !t.is_empty()) {
+        sql.push_str(
+            " AND EXISTS (SELECT 1 FROM bookmark_tags bt JOIN tags t ON t.id = bt.tag_id
+               WHERE bt.bookmark_id = b.id AND t.name = ? COLLATE NOCASE)",
+        );
+        args.push(tag.trim_start_matches('#').to_string().into());
+    }
+    match q.source.as_deref() {
+        Some("manual") => sql.push_str(" AND b.source_browser IS NULL"),
+        Some(s) if !s.is_empty() => {
+            sql.push_str(" AND b.source_browser = ?");
+            args.push(s.to_string().into());
+        }
+        _ => {}
+    }
+    if let Some(days) = q.added_within_days {
+        let since = (chrono::Utc::now() - chrono::Duration::days(days as i64)).to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
+        sql.push_str(" AND b.created_at >= ?");
+        args.push(since.into());
     }
     if let Some(domain) = q.domain.as_deref().filter(|d| !d.is_empty()) {
         sql.push_str(" AND b.domain = ?");
@@ -446,6 +467,107 @@ pub fn reindex(conn: &Connection, id: &str) -> Result<()> {
     Ok(())
 }
 
+/// Local heuristics, unless the user marked this domain as safe.
+fn assess(conn: &Connection, url: &url::Url, domain: &str) -> Result<security::Assessment> {
+    let overridden: bool =
+        conn.query_row("SELECT EXISTS(SELECT 1 FROM security_overrides WHERE domain = ?1)", [domain], |r| r.get(0))?;
+    if overridden {
+        return Ok(security::Assessment {
+            status: SecurityStatus::NotChecked,
+            reasons: vec!["You marked this site as safe".into()],
+        });
+    }
+    Ok(security::assess(url))
+}
+
+/// Re-run local checks for the given bookmarks (all live bookmarks when `None`).
+pub fn rescan(conn: &Connection, ids: Option<&[String]>) -> Result<RescanSummary> {
+    let targets: Vec<(String, String, String)> = {
+        let mut stmt = conn.prepare("SELECT id, url, domain FROM bookmarks WHERE deleted_at IS NULL")?;
+        let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
+        rows.collect::<rusqlite::Result<Vec<_>>>()?
+            .into_iter()
+            .filter(|(id, _, _)| ids.is_none_or(|ids| ids.contains(id)))
+            .collect()
+    };
+    let tx = conn.unchecked_transaction()?;
+    let mut summary = RescanSummary::default();
+    let ts = now();
+    for (id, url, domain) in targets {
+        let Ok(parsed) = url::Url::parse(&url) else { continue };
+        let a = assess(&tx, &parsed, &domain)?;
+        tx.execute(
+            "UPDATE bookmarks SET security_status = ?2, security_reasons = ?3, security_source = ?4, security_checked_at = ?5
+             WHERE id = ?1",
+            params![id, a.status.as_str(), a.reasons.join(&REASON_SEP.to_string()), security::LOCAL_SOURCE, ts],
+        )?;
+        tx.execute(
+            "INSERT INTO security_scans (id, bookmark_id, provider, status, details, scanned_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![new_id(), id, security::LOCAL_SOURCE, a.status.as_str(), a.reasons.join("; "), ts],
+        )?;
+        summary.scanned += 1;
+        if matches!(a.status, SecurityStatus::Suspicious | SecurityStatus::Dangerous) {
+            summary.suspicious += 1;
+        }
+    }
+    tx.commit()?;
+    Ok(summary)
+}
+
+/// "Report false positive": trust these bookmarks' domains and re-check them.
+pub fn mark_safe(conn: &Connection, ids: &[String]) -> Result<usize> {
+    let ts = now();
+    for id in ids {
+        let b = get(conn, id)?;
+        conn.execute(
+            "INSERT OR IGNORE INTO security_overrides (domain, created_at) VALUES (?1, ?2)",
+            params![b.domain, ts],
+        )?;
+    }
+    let domains: Vec<String> = ids.iter().filter_map(|id| get(conn, id).ok().map(|b| b.domain)).collect();
+    let affected: Vec<String> = {
+        let mut stmt = conn.prepare("SELECT id, domain FROM bookmarks WHERE deleted_at IS NULL")?;
+        let rows = stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?;
+        rows.collect::<rusqlite::Result<Vec<_>>>()?.into_iter().filter(|(_, d)| domains.contains(d)).map(|(id, _)| id).collect()
+    };
+    rescan(conn, Some(&affected))?;
+    Ok(affected.len())
+}
+
+pub fn list_overrides(conn: &Connection) -> Result<Vec<SecurityOverride>> {
+    let mut stmt = conn.prepare("SELECT domain, created_at FROM security_overrides ORDER BY domain")?;
+    let rows = stmt.query_map([], |r| Ok(SecurityOverride { domain: r.get(0)?, created_at: r.get(1)? }))?;
+    Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+}
+
+/// Stop trusting a domain and re-check its bookmarks.
+pub fn remove_override(conn: &Connection, domain: &str) -> Result<()> {
+    conn.execute("DELETE FROM security_overrides WHERE domain = ?1", [domain])?;
+    let ids: Vec<String> = {
+        let mut stmt = conn.prepare("SELECT id FROM bookmarks WHERE domain = ?1 AND deleted_at IS NULL")?;
+        stmt.query_map([domain], |r| r.get(0))?.collect::<rusqlite::Result<Vec<_>>>()?
+    };
+    rescan(conn, Some(&ids))?;
+    Ok(())
+}
+
+/// Values for the filter menus (live bookmarks only).
+pub fn facets(conn: &Connection) -> Result<Facets> {
+    let q = |sql: &str| -> Result<Vec<Facet>> {
+        let mut stmt = conn.prepare(sql)?;
+        let rows = stmt.query_map([], |r| Ok(Facet { value: r.get(0)?, count: r.get(1)? }))?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    };
+    Ok(Facets {
+        domains: q("SELECT domain, COUNT(*) c FROM bookmarks WHERE deleted_at IS NULL GROUP BY domain ORDER BY c DESC, domain LIMIT 200")?,
+        tags: q("SELECT t.name, COUNT(*) c FROM tags t JOIN bookmark_tags bt ON bt.tag_id = t.id
+                 JOIN bookmarks b ON b.id = bt.bookmark_id AND b.deleted_at IS NULL GROUP BY t.name ORDER BY c DESC, t.name")?,
+        sources: q("SELECT COALESCE(source_browser, 'manual'), COUNT(*) c FROM bookmarks WHERE deleted_at IS NULL
+                    GROUP BY 1 ORDER BY c DESC")?,
+        security: q("SELECT security_status, COUNT(*) FROM bookmarks WHERE deleted_at IS NULL GROUP BY 1")?,
+    })
+}
+
 /// Bookmarks whose preview hasn't been fetched yet: (id, url).
 pub fn pending_metadata(conn: &Connection, limit: u32) -> Result<Vec<(String, String)>> {
     let mut stmt = conn.prepare(
@@ -638,6 +760,42 @@ mod tests {
         assert_eq!(b.thumbnail_path, None);
         assert!(b.favicon_path.is_some());
         assert_eq!(b.metadata_status.as_deref(), Some("ok"));
+    }
+
+    #[test]
+    fn filters_by_tag_source_and_date() {
+        let c = open_in_memory().unwrap();
+        create(&c, NewBookmark { url: "https://a.com".into(), tags: vec!["design".into(), "ui".into()], ..Default::default() }).unwrap();
+        create(&c, NewBookmark { url: "https://b.com".into(), tags: vec!["design".into()], source_browser: Some("Chrome".into()), ..Default::default() }).unwrap();
+        let n = |q: BookmarkQuery| list(&c, &q).unwrap().len();
+        assert_eq!(n(BookmarkQuery { tags: vec!["#Design".into()], ..Default::default() }), 2);
+        assert_eq!(n(BookmarkQuery { tags: vec!["design".into(), "ui".into()], ..Default::default() }), 1);
+        assert_eq!(n(BookmarkQuery { source: Some("Chrome".into()), ..Default::default() }), 1);
+        assert_eq!(n(BookmarkQuery { source: Some("manual".into()), ..Default::default() }), 1);
+        assert_eq!(n(BookmarkQuery { added_within_days: Some(7), ..Default::default() }), 2);
+        let f = facets(&c).unwrap();
+        assert_eq!(f.tags[0].value, "design");
+        assert_eq!(f.tags[0].count, 2);
+        assert_eq!(f.sources.len(), 2);
+    }
+
+    #[test]
+    fn mark_safe_overrides_and_can_be_undone() {
+        let c = open_in_memory().unwrap();
+        let s = add(&c, "https://paypa1-secure-login.com/verify");
+        let s2 = add(&c, "https://paypa1-secure-login.com/other");
+        assert_eq!(s.security_status, SecurityStatus::Suspicious);
+        assert_eq!(mark_safe(&c, &[s.id.clone()]).unwrap(), 2, "applies to every bookmark on the domain");
+        let after = get(&c, &s2.id).unwrap();
+        assert_eq!(after.security_status, SecurityStatus::NotChecked);
+        assert_eq!(after.security_reasons, vec!["You marked this site as safe"]);
+        // New bookmarks on the domain respect the override too.
+        assert_eq!(check_url(&c, "https://paypa1-secure-login.com/x", None).unwrap().security_status, SecurityStatus::NotChecked);
+        assert_eq!(list_overrides(&c).unwrap().len(), 1);
+        remove_override(&c, "paypa1-secure-login.com").unwrap();
+        assert_eq!(get(&c, &s.id).unwrap().security_status, SecurityStatus::Suspicious);
+        let r = rescan(&c, None).unwrap();
+        assert_eq!((r.scanned, r.suspicious), (2, 2));
     }
 
     #[test]
