@@ -1,5 +1,7 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { Minus, Square, X } from "lucide-react";
+import { Download, Minus, Square, X } from "lucide-react";
+import { useUi } from "../../store/ui";
+import { Button } from "../ui/Button";
 import type { ReactNode } from "react";
 
 const win = (() => {
@@ -29,6 +31,7 @@ function WindowControls() {
 
 /** Top bar for the main area. Empty space drags the frameless window. */
 export function TopBar({ crumbs, actions }: { crumbs: ReactNode; actions?: ReactNode }) {
+  const openDialog = useUi((s) => s.openDialog);
   return (
     <header
       data-tauri-drag-region
@@ -41,6 +44,9 @@ export function TopBar({ crumbs, actions }: { crumbs: ReactNode; actions?: React
         {crumbs}
       </div>
       {actions}
+      <Button icon={<Download />} onClick={() => openDialog({ kind: "import" })}>
+        Import
+      </Button>
       <WindowControls />
     </header>
   );

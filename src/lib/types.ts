@@ -114,3 +114,48 @@ export interface AppError {
 }
 
 export type ViewMode = "card" | "compact" | "list";
+
+export type BrowserName = "chrome" | "edge";
+
+export interface BrowserProfile {
+  browser: BrowserName;
+  dir: string;
+  name: string;
+  bookmarkCount: number;
+}
+
+export type ImportSource = { kind: "browser"; browser: BrowserName; profile: string } | { kind: "html"; path: string };
+
+export interface ImportFolder {
+  key: string;
+  name: string;
+  depth: number;
+  count: number;
+}
+
+export interface ImportPreview {
+  sourceLabel: string;
+  total: number;
+  folders: number;
+  valid: number;
+  invalid: number;
+  duplicatesInFile: number;
+  alreadyInLibrary: number;
+  newCount: number;
+  folderTree: ImportFolder[];
+}
+
+export interface ImportOptions {
+  selectedFolders: string[];
+  foldersAsCategories: boolean;
+  skipDuplicates: boolean;
+  destinationCategoryId: string | null;
+}
+
+export interface ImportSummary {
+  total: number;
+  imported: number;
+  duplicatesSkipped: number;
+  invalidSkipped: number;
+  categoriesCreated: number;
+}

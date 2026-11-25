@@ -116,6 +116,12 @@ function checkUrl(raw: string, exclude?: string | null) {
 }
 
 export function installMockBackend() {
+  // `?empty` starts with an empty library (shows the first-run welcome screen).
+  if (new URLSearchParams(location.search).has("empty")) {
+    marks.length = 0;
+    cats.length = 0;
+    localStorage.removeItem("magpie.prefs");
+  }
   mockWindows("main");
   mockIPC((cmd, payload) => {
     const a = (payload ?? {}) as Record<string, any>;
@@ -180,6 +186,34 @@ export function installMockBackend() {
         return null;
       }
       case "reorder_categories": return null;
+      case "detect_browsers":
+        return [
+          { browser: "chrome", dir: "Default", name: "Personal", bookmarkCount: 1068 },
+          { browser: "chrome", dir: "Profile 1", name: "Work", bookmarkCount: 0 },
+          { browser: "edge", dir: "Default", name: "Profile 1", bookmarkCount: 2565 },
+        ];
+      case "plugin:dialog|open": return "C:\\Users\\you\\Downloads\\bookmarks_25_11_2026.html";
+      case "preview_import": {
+        const S = "\u001f";
+        return {
+          sourceLabel: a.source.kind === "html" ? "bookmarks_25_11_2026.html" : `${a.source.browser === "chrome" ? "Chrome" : "Edge"} — Personal`,
+          total: 1068, folders: 23, valid: 1063, invalid: 5, duplicatesInFile: 27, alreadyInLibrary: 12, newCount: 1024,
+          folderTree: [
+            { key: "Bookmarks bar", name: "Bookmarks bar", depth: 0, count: 18 },
+            { key: `Bookmarks bar${S}Design`, name: "Design", depth: 1, count: 128 },
+            { key: `Bookmarks bar${S}Design${S}Fonts`, name: "Fonts", depth: 2, count: 34 },
+            { key: `Bookmarks bar${S}Dev docs`, name: "Dev docs", depth: 1, count: 164 },
+            { key: `Bookmarks bar${S}Reading`, name: "Reading", depth: 1, count: 96 },
+            { key: "Other bookmarks", name: "Other bookmarks", depth: 0, count: 590 },
+            { key: "Mobile bookmarks", name: "Mobile bookmarks", depth: 0, count: 38 },
+          ],
+        };
+      }
+      case "start_import": {
+        const n = 6;
+        for (let i = 0; i < n; i++) add(`https://example-${seq}.dev/`, `Imported bookmark ${i + 1}`, null, null, 2000 + i, { sourceBrowser: "Chrome" });
+        return { total: 1068, imported: 1024, duplicatesSkipped: 39, invalidSkipped: 5, categoriesCreated: 4 };
+      }
       default:
         if (cmd.startsWith("plugin:window|")) return null;
         console.warn("mock: unhandled command", cmd);

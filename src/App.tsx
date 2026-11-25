@@ -5,6 +5,9 @@ import { useBookmarkActions } from "./components/bookmarks/useBookmarkActions";
 import { BookmarkDialog } from "./components/dialogs/BookmarkDialog";
 import { CategoryDialog, DeleteCategoryDialog } from "./components/dialogs/CategoryDialogs";
 import { ConfirmTrashDialog, EmptyTrashDialog, OpenWarningDialog } from "./components/dialogs/SmallDialogs";
+import { ImportDialog } from "./components/dialogs/ImportDialog";
+import { useCategories, useCounts } from "./hooks/queries";
+import { Welcome } from "./pages/Welcome";
 import { Sidebar } from "./components/layout/Sidebar";
 import { IconButton } from "./components/ui/Button";
 import { Toaster } from "./components/ui/Toaster";
@@ -40,6 +43,8 @@ function Dialogs() {
       return <ConfirmTrashDialog ids={dialog.ids} onClose={closeDialog} />;
     case "empty-trash":
       return <EmptyTrashDialog onClose={closeDialog} />;
+    case "import":
+      return <ImportDialog initial={dialog.source} onClose={closeDialog} />;
   }
 }
 
@@ -61,6 +66,9 @@ function useShortcuts(focusSearch: () => void) {
       if (ctrl && key === "n") {
         e.preventDefault();
         ui.openDialog({ kind: "add-bookmark" });
+      } else if (ctrl && key === "i") {
+        e.preventDefault();
+        ui.openDialog({ kind: "import" });
       } else if (ctrl && e.shiftKey && key === "f") {
         e.preventDefault();
         ui.navigate({ page: "library", view: "favourites" });
@@ -96,6 +104,10 @@ function Shell() {
   const { route, navigate, sidebarCollapsed, toggleSidebar, setSort } = useUi();
   const defaultSort = usePrefs((s) => s.defaultSort);
   const searchRef = useRef<HTMLInputElement>(null);
+  const welcomeDone = usePrefs((s) => s.welcomeDone);
+  const { data: counts } = useCounts();
+  const { data: categories } = useCategories();
+  const firstRun = !welcomeDone && counts?.all === 0 && counts.trash === 0 && categories?.length === 0;
 
   const focusSearch = () => {
     const ui = useUi.getState();
@@ -118,20 +130,28 @@ function Shell() {
 
   return (
     <div className="flex h-full bg-canvas">
-      {sidebarCollapsed ? (
-        <div className="flex w-14 flex-col items-center border-r border-line bg-subtle pt-3">
-          <IconButton label="Expand sidebar" onClick={toggleSidebar}>
-            <PanelLeft />
-          </IconButton>
+      {firstRun ? (
+        <div className="min-w-0 flex-1">
+          <Welcome />
         </div>
       ) : (
-        <Sidebar onSearchFocus={focusSearch} />
+        <>
+          {sidebarCollapsed ? (
+            <div className="flex w-14 flex-col items-center border-r border-line bg-subtle pt-3">
+              <IconButton label="Expand sidebar" onClick={toggleSidebar}>
+                <PanelLeft />
+              </IconButton>
+            </div>
+          ) : (
+            <Sidebar onSearchFocus={focusSearch} />
+          )}
+          <main className="flex min-w-0 flex-1">
+            {route.page === "dashboard" && <Dashboard />}
+            {route.page === "library" && <Library key={routeKey} view={route.view} categoryId={route.categoryId} searchRef={searchRef} />}
+            {route.page === "settings" && <Settings section={route.section} />}
+          </main>
+        </>
       )}
-      <main className="flex min-w-0 flex-1">
-        {route.page === "dashboard" && <Dashboard />}
-        {route.page === "library" && <Library key={routeKey} view={route.view} categoryId={route.categoryId} searchRef={searchRef} />}
-        {route.page === "settings" && <Settings section={route.section} />}
-      </main>
       <Dialogs />
       <Toaster />
     </div>

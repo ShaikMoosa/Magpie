@@ -10,14 +10,12 @@ import { useBookmarks, useCategories, useCounts } from "../hooks/queries";
 import { domainColor, domainLetter } from "../lib/colors";
 import { plural } from "../lib/format";
 import type { Bookmark, Category } from "../lib/types";
-import { toast } from "../store/toast";
 import { usePrefs, useUi } from "../store/ui";
 import { BookmarkCollection } from "./Library";
 
 function QuickAdd() {
   const openDialog = useUi((s) => s.openDialog);
   const [url, setUrl] = useState("");
-  const soon = () => toast({ type: "info", title: "Browser import is coming next", body: "Chrome, Edge and HTML import land in the next update." });
   const submit = () => {
     openDialog({ kind: "add-bookmark", url: url.trim() || undefined });
     setUrl("");
@@ -48,14 +46,14 @@ function QuickAdd() {
         </div>
       </form>
       <div className="flex gap-2 px-3 py-2.5">
-        {[
-          { icon: <FileText />, label: "HTML file" },
-          { icon: <Globe />, label: "Import from Chrome" },
-          { icon: <Globe />, label: "Import from Edge" },
-        ].map((c) => (
+        {([
+          { icon: <FileText />, label: "HTML file", source: "html" },
+          { icon: <Globe />, label: "Import from Chrome", source: "chrome" },
+          { icon: <Globe />, label: "Import from Edge", source: "edge" },
+        ] as const).map((c) => (
           <button
             key={c.label}
-            onClick={soon}
+            onClick={() => openDialog({ kind: "import", source: c.source })}
             className="inline-flex h-7 items-center gap-1.5 rounded-lg border border-line bg-subtle px-2.5 text-xs font-medium text-ink-2 hover:text-ink [&_svg]:size-3.5"
           >
             {c.icon}
@@ -165,7 +163,7 @@ export function Dashboard() {
               icon={<LayoutGrid />}
               tone="brand"
               title="Your library is empty"
-              body="Paste your first link above. Browser import arrives in the next update."
+              body="Paste your first link above, or import from Chrome, Edge or an HTML file."
               actions={
                 <Button variant="primary" icon={<Plus />} onClick={() => openDialog({ kind: "add-bookmark" })}>
                   Add a link

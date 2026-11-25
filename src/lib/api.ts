@@ -1,6 +1,11 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
   AppError,
+  BrowserProfile,
+  ImportOptions,
+  ImportPreview,
+  ImportSource,
+  ImportSummary,
   Bookmark,
   BookmarkQuery,
   Category,
@@ -42,4 +47,8 @@ export const api = {
   deleteCategory: (input: { id: string; moveTo: string | null; keepSubcategories: boolean }) =>
     invoke<void>("delete_category", { input }),
   reorderCategories: (ids: string[]) => invoke<void>("reorder_categories", { ids }),
+
+  detectBrowsers: () => invoke<BrowserProfile[]>("detect_browsers"),
+  previewImport: (source: ImportSource) => invoke<ImportPreview>("preview_import", { source }),
+  startImport: (source: ImportSource, options: ImportOptions) => invoke<ImportSummary>("start_import", { source, options }),
 };

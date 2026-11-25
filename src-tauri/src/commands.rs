@@ -7,10 +7,11 @@ use magpie_core::models::{
     Bookmark, BookmarkQuery, Category, Counts, DeleteCategory, NewBookmark, NewCategory, SecurityStatus,
     UpdateBookmark, UpdateCategory, UrlCheck,
 };
-use magpie_core::{Error, bookmarks, categories};
+use magpie_core::import::{BrowserProfile, ImportOptions, ImportPreview, ImportSource, ImportSummary};
+use magpie_core::{Error, bookmarks, categories, import};
 use magpie_core::rusqlite::Connection;
 use serde::Serialize;
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Manager, State};
 use tauri_plugin_opener::OpenerExt;
 
 pub struct AppState {
@@ -143,4 +144,37 @@ pub async fn delete_category(state: State<'_, AppState>, input: DeleteCategory) 
 #[tauri::command]
 pub async fn reorder_categories(state: State<'_, AppState>, ids: Vec<String>) -> CmdResult<()> {
     categories::reorder(&state.db(), &ids)
+}
+
+// ---------- Import ----------
+
+fn local_app_data(app: &AppHandle) -> CmdResult<std::path::PathBuf> {
+    app.path()
+        .local_data_dir()
+        .map_err(|_| Error::Validation("Couldn't find the Windows AppData folder.".into()))
+}
+
+/// Chrome and Edge profiles that have bookmarks.
+#[tauri::command]
+pub async fn detect_browsers(app: AppHandle) -> CmdResult<Vec<BrowserProfile>> {
+    Ok(import::detect_profiles(&local_app_data(&app)?))
+}
+
+/// Read a source and report what an import would do. Nothing is written.
+#[tauri::command]
+pub async fn preview_import(app: AppHandle, state: State<'_, AppState>, source: ImportSource) -> CmdResult<ImportPreview> {
+    let (label, _, items) = import::read_source(&source, &local_app_data(&app)?)?;
+    import::preview(&state.db(), label, &items)
+}
+
+/// Import the selected folders. Browser files are only read.
+#[tauri::command]
+pub async fn start_import(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    source: ImportSource,
+    options: ImportOptions,
+) -> CmdResult<ImportSummary> {
+    let (label, browser, items) = import::read_source(&source, &local_app_data(&app)?)?;
+    import::import(&state.db(), &label, &browser, &items, &options)
 }
