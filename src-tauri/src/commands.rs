@@ -23,10 +23,11 @@ pub struct AppState {
     /// Cached preview images and favicons.
     pub previews: PathBuf,
     pub preview_worker: AtomicBool,
+    pub ai_worker: AtomicBool,
 }
 
 impl AppState {
-    fn db(&self) -> MutexGuard<'_, Connection> {
+    pub(crate) fn db(&self) -> MutexGuard<'_, Connection> {
         self.db.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 }

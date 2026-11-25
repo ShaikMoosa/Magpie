@@ -2,6 +2,7 @@
 //! validation and local security heuristics. Has no UI or Tauri dependency
 //! so it can be unit-tested on its own.
 
+pub mod ai;
 pub mod bookmarks;
 pub mod categories;
 pub mod db;

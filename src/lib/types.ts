@@ -196,3 +196,60 @@ export interface PageMeta {
   favicon: string | null;
   finalUrl: string | null;
 }
+
+export type AiProvider = "openai" | "anthropic" | "gemini" | "custom";
+export type AiMode = "manual" | "suggestion" | "automatic";
+
+export interface AiConfig {
+  enabled: boolean;
+  provider: AiProvider;
+  model: string;
+  endpoint: string;
+  mode: AiMode;
+  allowNewCategories: boolean;
+  neverOverwriteManual: boolean;
+  autoCategoriseNew: boolean;
+  excludedCategoryIds: string[];
+}
+
+export interface AiUsage {
+  requests: number;
+  suggestions: number;
+  accepted: number;
+  errors: number;
+  lastError: string | null;
+  lastUsedAt: string | null;
+}
+
+export interface AiSettings {
+  config: AiConfig;
+  keys: AiProvider[];
+  usage: AiUsage;
+  running: boolean;
+}
+
+export interface AiSuggestion {
+  categoryId: string | null;
+  newCategory: string | null;
+  tags: string[];
+  confidence: number;
+  reason: string;
+  provider: string;
+  model: string;
+}
+
+export interface StoredSuggestion extends Omit<AiSuggestion, "reason"> {
+  bookmark: Bookmark;
+  reason: string | null;
+  createdAt: string;
+}
+
+export interface AiProgress {
+  done: number;
+  total: number;
+  suggested: number;
+  applied: number;
+  failed: number;
+  finished: boolean;
+  error: string | null;
+}

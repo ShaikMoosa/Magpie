@@ -3,17 +3,18 @@ import clsx from "clsx";
 import type { ReactNode } from "react";
 import logo from "../assets/logo.png";
 import { TopBar } from "../components/layout/TopBar";
+import { AiSettingsPanel } from "./AiSettings";
 import { Kbd, Toggle } from "../components/ui/Field";
 import { api, errorMessage } from "../lib/api";
 import { toast } from "../store/toast";
 import type { Sort, ViewMode } from "../lib/types";
 import { usePrefs, useUi, type SettingsSection } from "../store/ui";
 
-type Section = SettingsSection | "ai" | "security" | "data";
+type Section = SettingsSection | "security" | "data";
 
 const NAV: { id: Section; label: string; icon: ReactNode; soon?: boolean }[] = [
   { id: "general", label: "General", icon: <Settings2 /> },
-  { id: "ai", label: "AI & Categorisation", icon: <Sparkles />, soon: true },
+  { id: "ai", label: "AI & Categorisation", icon: <Sparkles /> },
   { id: "security", label: "Security", icon: <ShieldCheck />, soon: true },
   { id: "data", label: "Data & Storage", icon: <Database />, soon: true },
   { id: "shortcuts", label: "Keyboard shortcuts", icon: <Keyboard /> },
@@ -209,6 +210,7 @@ export function Settings({ section }: { section: SettingsSection }) {
             <h1 className="text-xl font-semibold tracking-tight">{current.label}</h1>
           </div>
           {section === "general" && <General />}
+          {section === "ai" && <AiSettingsPanel />}
           {section === "shortcuts" && <Shortcuts />}
           {section === "about" && <About />}
         </div>

@@ -9,7 +9,17 @@ export const keys = {
   categories: ["categories"],
   facets: ["facets"],
   overrides: ["overrides"],
+  ai: ["ai"],
+  suggestions: ["ai-suggestions"],
 };
+
+export function useAiSettings() {
+  return useQuery({ queryKey: keys.ai, queryFn: api.getAiSettings });
+}
+
+export function useAiSuggestions(enabled = true) {
+  return useQuery({ queryKey: keys.suggestions, queryFn: api.listAiSuggestions, enabled });
+}
 
 export function useFacets() {
   return useQuery({ queryKey: keys.facets, queryFn: api.getFacets });
@@ -40,6 +50,8 @@ function useInvalidate() {
       qc.invalidateQueries({ queryKey: keys.categories }),
       qc.invalidateQueries({ queryKey: keys.facets }),
       qc.invalidateQueries({ queryKey: keys.overrides }),
+      qc.invalidateQueries({ queryKey: keys.suggestions }),
+      qc.invalidateQueries({ queryKey: keys.ai }),
     ]);
 }
 
@@ -161,6 +173,35 @@ export function useMarkSafe() {
 export function useRemoveOverride() {
   const invalidate = useInvalidate();
   return useMutation({ mutationFn: (domain: string) => api.removeOverride(domain), onSuccess: invalidate, onError: onError("Couldn't update the site") });
+}
+
+export function useAcceptSuggestions() {
+  const invalidate = useInvalidate();
+  return useMutation({
+    mutationFn: (ids: string[]) => api.acceptAiSuggestions(ids),
+    onSuccess: async (n) => {
+      await invalidate();
+      toast({ type: "success", title: n === 1 ? "Bookmark filed" : `Filed ${n} bookmarks` });
+    },
+    onError: onError("Couldn't apply the suggestion"),
+  });
+}
+
+export function useRejectSuggestions() {
+  const invalidate = useInvalidate();
+  return useMutation({ mutationFn: (ids: string[]) => api.rejectAiSuggestions(ids), onSuccess: invalidate, onError: onError("Couldn't dismiss the suggestion") });
+}
+
+export function useCategorize() {
+  const invalidate = useInvalidate();
+  return useMutation({
+    mutationFn: (ids: string[] | null) => api.categorizeBookmarks(ids),
+    onSuccess: async (n) => {
+      await invalidate();
+      toast(n ? { type: "info", title: `AI is looking at ${n} bookmark${n === 1 ? "" : "s"}…`, body: "Suggestions appear in Uncategorized as they arrive." } : { type: "info", title: "Nothing new to organise" });
+    },
+    onError: onError("Couldn't start AI organising"),
+  });
 }
 
 export function useDeleteCategory() {

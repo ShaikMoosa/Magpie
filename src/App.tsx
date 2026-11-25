@@ -1,3 +1,4 @@
+import { useAiProgressListener } from "./components/library/AiReview";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { listen } from "@tauri-apps/api/event";
 import { api } from "./lib/api";
@@ -124,6 +125,7 @@ function Shell() {
   // Previews arrive in the background: refresh lists as they land, and on
   // start-up pick up anything that hasn't been fetched yet.
   const autoPreviews = usePrefs((s) => s.autoPreviews);
+  useAiProgressListener();
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout> | undefined;
     const un = listen("previews-updated", () => {
