@@ -5,18 +5,19 @@ import logo from "../assets/logo.png";
 import { TopBar } from "../components/layout/TopBar";
 import { AiSettingsPanel } from "./AiSettings";
 import { DataStoragePanel } from "./DataStorage";
+import { SecuritySettingsPanel } from "./SecuritySettings";
 import { Kbd, Toggle } from "../components/ui/Field";
 import { api, errorMessage } from "../lib/api";
 import { toast } from "../store/toast";
 import type { Sort, ViewMode } from "../lib/types";
 import { usePrefs, useUi, type SettingsSection } from "../store/ui";
 
-type Section = SettingsSection | "security";
+type Section = SettingsSection;
 
 const NAV: { id: Section; label: string; icon: ReactNode; soon?: boolean }[] = [
   { id: "general", label: "General", icon: <Settings2 /> },
   { id: "ai", label: "AI & Categorisation", icon: <Sparkles /> },
-  { id: "security", label: "Security", icon: <ShieldCheck />, soon: true },
+  { id: "security", label: "Security", icon: <ShieldCheck /> },
   { id: "data", label: "Data & Storage", icon: <Database /> },
   { id: "shortcuts", label: "Keyboard shortcuts", icon: <Keyboard /> },
   { id: "about", label: "About", icon: <Info /> },
@@ -212,6 +213,7 @@ export function Settings({ section }: { section: SettingsSection }) {
           </div>
           {section === "general" && <General />}
           {section === "ai" && <AiSettingsPanel />}
+          {section === "security" && <SecuritySettingsPanel />}
           {section === "data" && <DataStoragePanel />}
           {section === "shortcuts" && <Shortcuts />}
           {section === "about" && <About />}

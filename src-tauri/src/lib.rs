@@ -1,6 +1,7 @@
 mod ai_commands;
 mod commands;
 mod data_commands;
+mod security_commands;
 
 use std::sync::Mutex;
 
@@ -27,8 +28,10 @@ pub fn run() {
                 backups,
                 preview_worker: std::sync::atomic::AtomicBool::new(false),
                 ai_worker: std::sync::atomic::AtomicBool::new(false),
+                scan_worker: std::sync::atomic::AtomicBool::new(false),
             });
             data_commands::start_auto_backup(app.handle());
+            security_commands::scan_stale_at_startup(app.handle());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -81,6 +84,11 @@ pub fn run() {
             data_commands::restore_backup,
             data_commands::clear_preview_cache,
             data_commands::reset_app_data,
+            security_commands::get_security_settings,
+            security_commands::save_security_config,
+            security_commands::set_scan_key,
+            security_commands::remove_scan_key,
+            security_commands::scan_bookmarks,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

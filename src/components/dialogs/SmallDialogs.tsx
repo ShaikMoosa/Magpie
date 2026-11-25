@@ -1,6 +1,6 @@
 import { Link2, ShieldAlert, ShieldCheck, Trash2 } from "lucide-react";
-import type { ReactNode } from "react";
-import { useEmptyTrash, useCounts, useMarkSafe } from "../../hooks/queries";
+import { useState, type ReactNode } from "react";
+import { useEmptyTrash, useCounts, useMarkSafe, useSecuritySettings } from "../../hooks/queries";
 import { displayUrl, formatRelative } from "../../lib/format";
 import type { Bookmark } from "../../lib/types";
 import { toast } from "../../store/toast";
@@ -13,18 +13,21 @@ export function OpenWarningDialog({ bookmark, onClose }: { bookmark: Bookmark; o
   const a = useBookmarkActions();
   const markSafe = useMarkSafe();
   const dangerous = bookmark.securityStatus === "dangerous";
+  const { data: sec } = useSecuritySettings();
+  const blocked = dangerous && (sec?.config.blockDangerous ?? true);
+  const [understood, setUnderstood] = useState(false);
   return (
     <Dialog
       open
       onClose={onClose}
-      title={dangerous ? "Magpie blocked this website" : "This link looks suspicious"}
+      title={blocked ? "Magpie blocked this website" : dangerous ? "This website is a known threat" : "This link looks suspicious"}
       icon={<ShieldAlert />}
       iconClass={dangerous ? "bg-danger-bg text-danger" : "bg-warning-bg text-warning"}
-      width={480}
+      width={540}
       footer={
         <>
           <button
-            className="text-[13px] font-medium text-ink-2 hover:text-ink"
+            className="text-[13px] font-medium whitespace-nowrap text-ink-2 hover:text-ink"
             onClick={() => {
               void navigator.clipboard.writeText(bookmark.url);
               toast({ type: "success", title: "URL copied" });
@@ -33,7 +36,7 @@ export function OpenWarningDialog({ bookmark, onClose }: { bookmark: Bookmark; o
             Copy URL
           </button>
           <button
-            className="text-[13px] font-medium text-ink-2 hover:text-ink"
+            className="text-[13px] font-medium whitespace-nowrap text-ink-2 hover:text-ink"
             onClick={() => {
               markSafe.mutate([bookmark.id]);
               onClose();
@@ -45,6 +48,7 @@ export function OpenWarningDialog({ bookmark, onClose }: { bookmark: Bookmark; o
           <Button
             variant="ghost"
             className="!text-danger"
+            disabled={blocked && !understood}
             onClick={() => {
               a.openConfirmed(bookmark);
               onClose();
@@ -62,7 +66,7 @@ export function OpenWarningDialog({ bookmark, onClose }: { bookmark: Bookmark; o
         <p className="text-sm text-ink-2">
           {dangerous
             ? "This bookmark is a known threat. Opening it could install malware or steal your data."
-            : "Magpie's local checks found warning signs. Make sure you trust this site before opening it."}
+            : "Security checks found warning signs. Make sure you trust this site before opening it."}
         </p>
         <div className={`flex flex-col gap-2 rounded-xl border px-3.5 py-3 ${dangerous ? "border-red-200 bg-danger-bg" : "border-amber-200 bg-warning-bg"}`}>
           <span className={`flex items-center gap-1.5 text-[13px] font-medium ${dangerous ? "text-danger" : "text-warning"}`}>
@@ -77,6 +81,12 @@ export function OpenWarningDialog({ bookmark, onClose }: { bookmark: Bookmark; o
             {bookmark.securitySource ?? "Local heuristics"} · {formatRelative(bookmark.securityCheckedAt)}
           </span>
         </div>
+        {blocked && (
+          <label className="flex items-center gap-2 text-xs text-ink-2">
+            <input type="checkbox" checked={understood} onChange={(e) => setUnderstood(e.target.checked)} className="accent-red-600" />
+            I understand the risk and want the option to open it anyway
+          </label>
+        )}
       </div>
     </Dialog>
   );

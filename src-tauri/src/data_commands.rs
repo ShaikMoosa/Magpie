@@ -67,8 +67,8 @@ pub async fn inspect_backup(state: State<'_, AppState>, name: Option<String>, pa
 /// user picked (`path`). Takes a "before restore" snapshot first.
 #[tauri::command]
 pub async fn restore_backup(state: State<'_, AppState>, name: Option<String>, path: Option<PathBuf>) -> CmdResult<BackupSummary> {
-    if state.preview_worker.load(Ordering::SeqCst) || state.ai_worker.load(Ordering::SeqCst) {
-        return Err(Error::Validation("Wait for previews or AI organising to finish, then try again.".into()));
+    if state.preview_worker.load(Ordering::SeqCst) || state.ai_worker.load(Ordering::SeqCst) || state.scan_worker.load(Ordering::SeqCst) {
+        return Err(Error::Validation("Wait for previews, AI organising or security scans to finish, then try again.".into()));
     }
     let src = source(&state, name, path)?;
     // Copy a picked file first so restoring never reads from a file that
@@ -109,8 +109,8 @@ pub async fn clear_preview_cache(state: State<'_, AppState>) -> CmdResult<u64> {
 /// Backups are kept so this can be undone from Settings.
 #[tauri::command]
 pub async fn reset_app_data(state: State<'_, AppState>) -> CmdResult<()> {
-    if state.preview_worker.load(Ordering::SeqCst) || state.ai_worker.load(Ordering::SeqCst) {
-        return Err(Error::Validation("Wait for previews or AI organising to finish, then try again.".into()));
+    if state.preview_worker.load(Ordering::SeqCst) || state.ai_worker.load(Ordering::SeqCst) || state.scan_worker.load(Ordering::SeqCst) {
+        return Err(Error::Validation("Wait for previews, AI organising or security scans to finish, then try again.".into()));
     }
     {
         let db = state.db();
@@ -120,6 +120,7 @@ pub async fn reset_app_data(state: State<'_, AppState>) -> CmdResult<()> {
         data::clear_previews(&db, &state.previews)?;
     }
     crate::ai_commands::remove_all_keys();
+    crate::security_commands::remove_all_keys();
     Ok(())
 }
 

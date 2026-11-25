@@ -26,6 +26,7 @@ pub struct AppState {
     pub backups: PathBuf,
     pub preview_worker: AtomicBool,
     pub ai_worker: AtomicBool,
+    pub scan_worker: AtomicBool,
 }
 
 impl AppState {
@@ -54,8 +55,10 @@ pub async fn check_url(state: State<'_, AppState>, url: String, exclude_id: Opti
 }
 
 #[tauri::command]
-pub async fn create_bookmark(state: State<'_, AppState>, input: NewBookmark) -> CmdResult<Bookmark> {
-    bookmarks::create(&state.db(), input)
+pub async fn create_bookmark(app: AppHandle, state: State<'_, AppState>, input: NewBookmark) -> CmdResult<Bookmark> {
+    let b = bookmarks::create(&state.db(), input)?;
+    crate::security_commands::scan_saved(&app, Some(vec![b.id.clone()]));
+    Ok(b)
 }
 
 #[tauri::command]
@@ -117,7 +120,13 @@ pub async fn open_bookmark(
     let bookmark = {
         let db = state.db();
         let current = bookmarks::get(&db, &id)?;
-        let risky = matches!(current.security_status, SecurityStatus::Suspicious | SecurityStatus::Dangerous);
+        let cfg = magpie_core::scanners::get_config(&db)?;
+        let risky = match current.security_status {
+            // "Block known malicious sites" off: still warn, never open silently.
+            SecurityStatus::Dangerous => true,
+            SecurityStatus::Suspicious => cfg.warn_suspicious,
+            _ => false,
+        };
         if risky && !confirmed {
             return Ok(OpenOutcome { opened: false, bookmark: current });
         }
@@ -187,7 +196,9 @@ pub async fn start_import(
 ) -> CmdResult<ImportSummary> {
     let (label, browser, items) = import::read_source(&source, &local_app_data(&app)?)?;
     crate::data_commands::safety_backup(&state, magpie_core::data::BackupKind::BeforeImport)?;
-    import::import(&state.db(), &label, &browser, &items, &options)
+    let summary = import::import(&state.db(), &label, &browser, &items, &options)?;
+    crate::security_commands::scan_saved(&app, None);
+    Ok(summary)
 }
 
 // ---------- Link previews ----------

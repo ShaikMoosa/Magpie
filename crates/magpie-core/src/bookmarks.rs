@@ -11,6 +11,7 @@ use crate::models::{
 use crate::{security, urls};
 
 const REASON_SEP: char = '\u{1f}';
+const TRUSTED_REASON: &str = "You marked this site as safe";
 const RECENT_DAYS: i64 = 30;
 
 const SELECT: &str = "SELECT b.id, b.url, b.title, b.description, b.domain, b.favicon_path, b.thumbnail_path,
@@ -474,7 +475,7 @@ fn assess(conn: &Connection, url: &url::Url, domain: &str) -> Result<security::A
     if overridden {
         return Ok(security::Assessment {
             status: SecurityStatus::NotChecked,
-            reasons: vec!["You marked this site as safe".into()],
+            reasons: vec![TRUSTED_REASON.into()],
         });
     }
     Ok(security::assess(url))
@@ -496,17 +497,20 @@ pub fn rescan(conn: &Connection, ids: Option<&[String]>) -> Result<RescanSummary
     for (id, url, domain) in targets {
         let Ok(parsed) = url::Url::parse(&url) else { continue };
         let a = assess(&tx, &parsed, &domain)?;
+        // Keep the latest external verdicts (unless the user trusts this site).
+        let external = if a.reasons.iter().any(|r| r == TRUSTED_REASON) { Vec::new() } else { crate::scanners::latest_results(&tx, &id)? };
+        let combined = crate::scanners::combine(&a, &external);
         tx.execute(
             "UPDATE bookmarks SET security_status = ?2, security_reasons = ?3, security_source = ?4, security_checked_at = ?5
              WHERE id = ?1",
-            params![id, a.status.as_str(), a.reasons.join(&REASON_SEP.to_string()), security::LOCAL_SOURCE, ts],
+            params![id, combined.status.as_str(), combined.reasons.join(&REASON_SEP.to_string()), combined.source, ts],
         )?;
         tx.execute(
             "INSERT INTO security_scans (id, bookmark_id, provider, status, details, scanned_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
             params![new_id(), id, security::LOCAL_SOURCE, a.status.as_str(), a.reasons.join("; "), ts],
         )?;
         summary.scanned += 1;
-        if matches!(a.status, SecurityStatus::Suspicious | SecurityStatus::Dangerous) {
+        if matches!(combined.status, SecurityStatus::Suspicious | SecurityStatus::Dangerous) {
             summary.suspicious += 1;
         }
     }
