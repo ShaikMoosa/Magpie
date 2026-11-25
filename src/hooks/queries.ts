@@ -131,6 +131,26 @@ export function useEmptyTrash() {
   return useMutation({ mutationFn: api.emptyTrash, onSuccess: invalidate, onError: onError("Couldn't empty Trash") });
 }
 
+export function useAddTags() {
+  const invalidate = useInvalidate();
+  return useMutation({
+    mutationFn: ({ ids, tags }: { ids: string[]; tags: string[] }) => api.addTags(ids, tags),
+    onSuccess: invalidate,
+    onError: onError("Couldn't add the tags"),
+  });
+}
+
+export function useOpenPrivate() {
+  const invalidate = useInvalidate();
+  return useMutation({
+    mutationFn: ({ bookmark, confirmed }: { bookmark: Bookmark; confirmed?: boolean }) => api.openPrivate(bookmark.id, confirmed ?? false),
+    onSuccess: (r) => {
+      if (r.opened) void invalidate();
+    },
+    onError: onError("Couldn't open a private window"),
+  });
+}
+
 export function useOpenBookmark() {
   const invalidate = useInvalidate();
   return useMutation({

@@ -138,6 +138,34 @@ pub async fn open_bookmark(
     Ok(OpenOutcome { opened: true, bookmark })
 }
 
+/// Open in the default browser's private window, with the same security
+/// gating as a normal open.
+#[tauri::command]
+pub async fn open_private(state: State<'_, AppState>, id: String, confirmed: bool) -> CmdResult<OpenOutcome> {
+    let bookmark = {
+        let db = state.db();
+        let current = bookmarks::get(&db, &id)?;
+        let cfg = magpie_core::scanners::get_config(&db)?;
+        let risky = match current.security_status {
+            SecurityStatus::Dangerous => true,
+            SecurityStatus::Suspicious => cfg.warn_suspicious,
+            _ => false,
+        };
+        if risky && !confirmed {
+            return Ok(OpenOutcome { opened: false, bookmark: current });
+        }
+        current
+    };
+    crate::private_browser::open(&bookmark.url)?;
+    let bookmark = bookmarks::record_open(&state.db(), &id)?;
+    Ok(OpenOutcome { opened: true, bookmark })
+}
+
+#[tauri::command]
+pub async fn add_tags(state: State<'_, AppState>, ids: Vec<String>, tags: Vec<String>) -> CmdResult<usize> {
+    bookmarks::add_tags(&state.db(), &ids, &tags)
+}
+
 // ---------- Categories ----------
 
 #[tauri::command]

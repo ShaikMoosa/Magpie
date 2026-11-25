@@ -1,6 +1,6 @@
 import * as CM from "@radix-ui/react-context-menu";
 import * as DM from "@radix-ui/react-dropdown-menu";
-import { Check, ChevronRight, Copy, ExternalLink, Folder, ImageIcon, Pencil, RotateCcw, Star, Trash2 } from "lucide-react";
+import { Check, ChevronRight, Copy, ExternalLink, Folder, Globe, ImageIcon, Pencil, RotateCcw, ShieldCheck, Star, Trash2 } from "lucide-react";
 import clsx from "clsx";
 import type { ReactNode } from "react";
 import type { Bookmark } from "../../lib/types";
@@ -35,6 +35,9 @@ function Items({ kit, bookmark }: { kit: Kit; bookmark: Bookmark }) {
       <K.Item className={itemCls} onSelect={() => a.open(bookmark)}>
         <ExternalLink /> Open {shortcut("Enter")}
       </K.Item>
+      <K.Item className={itemCls} onSelect={() => a.openPrivate(bookmark)}>
+        <Globe /> Open in private window {shortcut("Ctrl Shift N")}
+      </K.Item>
       <K.Item className={itemCls} onSelect={() => a.copyUrl(bookmark)}>
         <Copy /> Copy URL {shortcut("Ctrl Shift C")}
       </K.Item>
@@ -68,6 +71,9 @@ function Items({ kit, bookmark }: { kit: Kit; bookmark: Bookmark }) {
       </K.Sub>
       <K.Item className={itemCls} onSelect={() => a.refreshPreview([bookmark.id])}>
         <ImageIcon /> Refresh preview
+      </K.Item>
+      <K.Item className={itemCls} onSelect={() => a.scan([bookmark.id])}>
+        <ShieldCheck /> Scan URL
       </K.Item>
       <K.Separator className="my-1 h-px bg-line" />
       <K.Item className={clsx(itemCls, "text-danger [&_svg]:!text-danger")} onSelect={() => a.trash([bookmark.id])}>

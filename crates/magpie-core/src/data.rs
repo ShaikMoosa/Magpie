@@ -24,8 +24,12 @@ pub enum ExportFormat {
 }
 
 /// Live (not trashed) bookmarks, oldest first so re-imports keep their order.
-fn live_bookmarks(conn: &Connection) -> Result<Vec<Bookmark>> {
+/// With `only`, just those bookmarks.
+fn live_bookmarks(conn: &Connection, only: Option<&[String]>) -> Result<Vec<Bookmark>> {
     let mut items = bookmarks::list(conn, &BookmarkQuery::default())?;
+    if let Some(ids) = only {
+        items.retain(|b| ids.contains(&b.id));
+    }
     items.reverse();
     Ok(items)
 }
@@ -49,9 +53,9 @@ fn category_paths(cats: &[Category]) -> HashMap<String, String> {
         .collect()
 }
 
-pub fn to_json(conn: &Connection) -> Result<String> {
+pub fn to_json(conn: &Connection, only: Option<&[String]>) -> Result<String> {
     let cats = categories::list(conn)?;
-    let items = live_bookmarks(conn)?;
+    let items = live_bookmarks(conn, only)?;
     let doc = json!({
         "format": "magpie",
         "version": 1,
@@ -79,9 +83,9 @@ fn unix(ts: &str) -> i64 {
 }
 
 /// Netscape bookmark file, readable by Chrome, Edge, Firefox and Magpie.
-pub fn to_html(conn: &Connection) -> Result<String> {
+pub fn to_html(conn: &Connection, only: Option<&[String]>) -> Result<String> {
     let cats = categories::list(conn)?;
-    let items = live_bookmarks(conn)?;
+    let items = live_bookmarks(conn, only)?;
     let mut by_cat: HashMap<Option<&str>, Vec<&Bookmark>> = HashMap::new();
     for b in &items {
         by_cat.entry(b.category_id.as_deref()).or_default().push(b);
@@ -125,10 +129,10 @@ fn cell(s: &str) -> String {
     if s.contains([',', '"', '\n', '\r']) { format!("\"{}\"", s.replace('"', "\"\"")) } else { s }
 }
 
-pub fn to_csv(conn: &Connection) -> Result<String> {
+pub fn to_csv(conn: &Connection, only: Option<&[String]>) -> Result<String> {
     let paths = category_paths(&categories::list(conn)?);
     let mut out = String::from("\u{feff}title,url,category,tags,favourite,description,added,last_opened,open_count,security\r\n");
-    for b in live_bookmarks(conn)? {
+    for b in live_bookmarks(conn, only)? {
         let row = [
             cell(&b.title),
             cell(&b.url),
@@ -158,16 +162,16 @@ fn write_atomic(path: &Path, contents: &[u8]) -> Result<()> {
     Ok(())
 }
 
-/// Export live bookmarks. Returns how many were written.
-pub fn export(conn: &Connection, format: ExportFormat, path: &Path) -> Result<usize> {
-    let count: i64 = conn.query_row("SELECT COUNT(*) FROM bookmarks WHERE deleted_at IS NULL", [], |r| r.get(0))?;
+/// Export live bookmarks (or just `only`). Returns how many were written.
+pub fn export(conn: &Connection, format: ExportFormat, path: &Path, only: Option<&[String]>) -> Result<usize> {
+    let count = live_bookmarks(conn, only)?.len();
     let body = match format {
-        ExportFormat::Json => to_json(conn)?,
-        ExportFormat::Html => to_html(conn)?,
-        ExportFormat::Csv => to_csv(conn)?,
+        ExportFormat::Json => to_json(conn, only)?,
+        ExportFormat::Html => to_html(conn, only)?,
+        ExportFormat::Csv => to_csv(conn, only)?,
     };
     write_atomic(path, body.as_bytes())?;
-    Ok(count as usize)
+    Ok(count)
 }
 
 // ---------------------------------------------------------------- backups
@@ -472,7 +476,7 @@ mod tests {
     fn json_export_has_live_bookmarks_and_categories() {
         let conn = db::open_in_memory().unwrap();
         seed(&conn);
-        let v: serde_json::Value = serde_json::from_str(&to_json(&conn).unwrap()).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&to_json(&conn, None).unwrap()).unwrap();
         assert_eq!(v["format"], "magpie");
         assert_eq!(v["bookmarks"].as_array().unwrap().len(), 2);
         assert_eq!(v["categories"].as_array().unwrap().len(), 2);
@@ -482,7 +486,7 @@ mod tests {
     fn html_export_round_trips_through_the_importer() {
         let conn = db::open_in_memory().unwrap();
         seed(&conn);
-        let html = to_html(&conn).unwrap();
+        let html = to_html(&conn, None).unwrap();
         assert!(html.contains("&quot;kits&quot; &amp; &lt;more&gt;"));
         let parsed = crate::import::parse_netscape_html(&html);
         assert_eq!(parsed.len(), 2);
@@ -495,11 +499,23 @@ mod tests {
     fn csv_quotes_and_neutralises_formulas() {
         let conn = db::open_in_memory().unwrap();
         seed(&conn);
-        let csv = to_csv(&conn).unwrap();
+        let csv = to_csv(&conn, None).unwrap();
         assert!(csv.contains("\"'=HYPERLINK(\"\"x\"\")\""));
         assert!(csv.contains("\"line1\nline2\""));
         assert!(csv.contains("Design › UI Kits"));
         assert_eq!(csv.lines().filter(|l| l.contains("https://")).count(), 2);
+    }
+
+    #[test]
+    fn export_only_selected() {
+        let dir = tempfile::tempdir().unwrap();
+        let conn = db::open_in_memory().unwrap();
+        seed(&conn);
+        let first = bookmarks::list(&conn, &BookmarkQuery::default()).unwrap().remove(0);
+        let path = dir.path().join("one.csv");
+        assert_eq!(export(&conn, ExportFormat::Csv, &path, Some(std::slice::from_ref(&first.id))).unwrap(), 1);
+        assert_eq!(export(&conn, ExportFormat::Json, &dir.path().join("all.json"), None).unwrap(), 2);
+        assert_eq!(fs::read_to_string(&path).unwrap().matches("https://").count(), 1);
     }
 
     #[test]

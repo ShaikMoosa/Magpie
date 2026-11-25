@@ -274,7 +274,6 @@ export function SecuritySettingsPanel() {
           </div>
         </Row>
       </Card>
-      {scan.dialog}
     </>
   );
 }

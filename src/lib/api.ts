@@ -57,6 +57,9 @@ export const api = {
   emptyTrash: () => invoke<number>("empty_trash"),
   openBookmark: (id: string, confirmed = false) =>
     invoke<{ opened: boolean; bookmark: Bookmark }>("open_bookmark", { id, confirmed }),
+  openPrivate: (id: string, confirmed = false) =>
+    invoke<{ opened: boolean; bookmark: Bookmark }>("open_private", { id, confirmed }),
+  addTags: (ids: string[], tags: string[]) => invoke<number>("add_tags", { ids, tags }),
 
   listCategories: () => invoke<Category[]>("list_categories"),
   createCategory: (input: CategoryInput) => invoke<Category>("create_category", { input }),
@@ -96,7 +99,7 @@ export const api = {
   // Data & Storage
   getStorageInfo: () => invoke<StorageInfo>("get_storage_info"),
   revealDataFolder: () => invoke<void>("reveal_data_folder"),
-  exportLibrary: (format: ExportFormat, path: string) => invoke<number>("export_library", { format, path }),
+  exportLibrary: (format: ExportFormat, path: string, ids: string[] | null = null) => invoke<number>("export_library", { format, path, ids }),
   getBackupConfig: () => invoke<BackupConfig>("get_backup_config"),
   saveBackupConfig: (config: BackupConfig) => invoke<BackupConfig>("save_backup_config", { config }),
   listBackups: () => invoke<BackupInfo[]>("list_backups"),

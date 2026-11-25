@@ -426,6 +426,27 @@ pub fn record_open(conn: &Connection, id: &str) -> Result<Bookmark> {
     get(conn, id)
 }
 
+/// Add tags to several bookmarks, keeping the tags they already have.
+pub fn add_tags(conn: &Connection, ids: &[String], tags: &[String]) -> Result<usize> {
+    if tags.iter().all(|t| t.trim().trim_start_matches('#').trim().is_empty()) {
+        return Err(Error::Validation("Enter at least one tag.".into()));
+    }
+    let tx = conn.unchecked_transaction()?;
+    let ts = now();
+    let mut n = 0;
+    for id in ids {
+        let b = get(&tx, id)?;
+        let mut merged = b.tags.clone();
+        merged.extend(tags.iter().cloned());
+        set_tags(&tx, id, &merged)?;
+        tx.execute("UPDATE bookmarks SET updated_at = ?2 WHERE id = ?1", params![id, ts])?;
+        reindex(&tx, id)?;
+        n += 1;
+    }
+    tx.commit()?;
+    Ok(n)
+}
+
 fn set_tags(conn: &Connection, bookmark_id: &str, tags: &[String]) -> Result<()> {
     conn.execute("DELETE FROM bookmark_tags WHERE bookmark_id = ?1", [bookmark_id])?;
     for raw in tags {
@@ -632,6 +653,19 @@ pub(crate) fn reindex_category(conn: &Connection, category_id: &str) -> Result<(
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn add_tags_merges() {
+        let c = crate::db::open_in_memory().unwrap();
+        let a = create(&c, NewBookmark { url: "https://a.example".into(), tags: vec!["keep".into()], ..Default::default() }).unwrap();
+        let b = create(&c, NewBookmark { url: "https://b.example".into(), ..Default::default() }).unwrap();
+        assert_eq!(add_tags(&c, &[a.id.clone(), b.id.clone()], &["#New".into(), "keep".into()]).unwrap(), 2);
+        assert_eq!(get(&c, &a.id).unwrap().tags, vec!["keep", "new"]);
+        assert_eq!(get(&c, &b.id).unwrap().tags, vec!["keep", "new"]);
+        assert!(add_tags(&c, std::slice::from_ref(&a.id), &[" # ".into()]).is_err());
+        let q = BookmarkQuery { search: Some("new".into()), ..Default::default() };
+        assert_eq!(list(&c, &q).unwrap().len(), 2, "search index sees new tags");
+    }
     use super::*;
     use crate::db::open_in_memory;
     use crate::models::NewCategory;

@@ -4,6 +4,8 @@ import {
   Check,
   ChevronDown,
   ChevronRight,
+  Download,
+  Hash,
   Clock,
   Folder,
   FolderInput,
@@ -192,6 +194,32 @@ function BulkBar({ ids, inTrash, categories }: { ids: string[]; inTrash: boolean
           <button className={btn} onClick={() => a.setFavourite(ids, false)}>
             Unfavourite
           </button>
+          <button className={btn} onClick={() => a.addTags(ids)}>
+            <Hash /> Tag
+          </button>
+          <button className={btn} onClick={() => a.scan(ids)}>
+            <ShieldCheck /> Scan
+          </button>
+          <DM.Root>
+            <DM.Trigger asChild>
+              <button className={btn}>
+                <Download /> Export
+              </button>
+            </DM.Trigger>
+            <DM.Portal>
+              <DM.Content align="end" sideOffset={4} className="z-50 min-w-[180px] rounded-xl border border-line bg-canvas p-1.5 shadow-lg">
+                {(["json", "html", "csv"] as const).map((f) => (
+                  <DM.Item
+                    key={f}
+                    className="flex h-8 cursor-default items-center rounded-[7px] px-2.5 text-[13px] outline-none data-[highlighted]:bg-muted"
+                    onSelect={() => void a.exportSelection(ids, f)}
+                  >
+                    {f === "json" ? "JSON" : f === "html" ? "HTML (browser format)" : "CSV"}
+                  </DM.Item>
+                ))}
+              </DM.Content>
+            </DM.Portal>
+          </DM.Root>
           <button className={clsx(btn, "text-danger")} onClick={() => a.trash(ids)}>
             <Trash2 /> Delete
           </button>
