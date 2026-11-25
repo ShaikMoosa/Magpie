@@ -1,5 +1,6 @@
 mod ai_commands;
 mod commands;
+mod data_commands;
 
 use std::sync::Mutex;
 
@@ -18,13 +19,16 @@ pub fn run() {
             let conn = magpie_core::db::open(&db_path).map_err(|e| Box::<dyn std::error::Error>::from(e.to_string()))?;
             let previews = dir.join("previews");
             std::fs::create_dir_all(&previews)?;
+            let backups = dir.join("backups");
             app.manage(AppState {
                 db: Mutex::new(conn),
                 db_path,
                 previews,
+                backups,
                 preview_worker: std::sync::atomic::AtomicBool::new(false),
                 ai_worker: std::sync::atomic::AtomicBool::new(false),
             });
+            data_commands::start_auto_backup(app.handle());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -66,6 +70,17 @@ pub fn run() {
             ai_commands::accept_ai_suggestions,
             ai_commands::reject_ai_suggestions,
             ai_commands::categorize_bookmarks,
+            data_commands::get_storage_info,
+            data_commands::reveal_data_folder,
+            data_commands::export_library,
+            data_commands::get_backup_config,
+            data_commands::save_backup_config,
+            data_commands::list_backups,
+            data_commands::create_backup,
+            data_commands::inspect_backup,
+            data_commands::restore_backup,
+            data_commands::clear_preview_cache,
+            data_commands::reset_app_data,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

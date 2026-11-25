@@ -1,5 +1,10 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
+  BackupConfig,
+  BackupInfo,
+  BackupSummary,
+  ExportFormat,
+  StorageInfo,
   AiConfig,
   AiProvider,
   AiSettings,
@@ -77,6 +82,19 @@ export const api = {
   acceptAiSuggestions: (ids: string[]) => invoke<number>("accept_ai_suggestions", { ids }),
   rejectAiSuggestions: (ids: string[]) => invoke<number>("reject_ai_suggestions", { ids }),
   categorizeBookmarks: (ids: string[] | null = null) => invoke<number>("categorize_bookmarks", { ids }),
+
+  // Data & Storage
+  getStorageInfo: () => invoke<StorageInfo>("get_storage_info"),
+  revealDataFolder: () => invoke<void>("reveal_data_folder"),
+  exportLibrary: (format: ExportFormat, path: string) => invoke<number>("export_library", { format, path }),
+  getBackupConfig: () => invoke<BackupConfig>("get_backup_config"),
+  saveBackupConfig: (config: BackupConfig) => invoke<BackupConfig>("save_backup_config", { config }),
+  listBackups: () => invoke<BackupInfo[]>("list_backups"),
+  createBackup: () => invoke<BackupInfo>("create_backup"),
+  inspectBackup: (src: { name?: string; path?: string }) => invoke<BackupSummary>("inspect_backup", { name: src.name ?? null, path: src.path ?? null }),
+  restoreBackup: (src: { name?: string; path?: string }) => invoke<BackupSummary>("restore_backup", { name: src.name ?? null, path: src.path ?? null }),
+  clearPreviewCache: () => invoke<number>("clear_preview_cache"),
+  resetAppData: () => invoke<void>("reset_app_data"),
 
   previewsDir: () => invoke<string>("previews_dir"),
   fetchMetadata: (url: string) => invoke<PageMeta>("fetch_metadata", { url }),

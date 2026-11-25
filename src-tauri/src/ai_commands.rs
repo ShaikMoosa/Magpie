@@ -73,6 +73,15 @@ pub async fn set_ai_key(provider: Provider, key: String) -> CmdResult<()> {
     entry(provider)?.set_password(key).map_err(|_| Error::Validation("Couldn't save the key to Windows Credential Manager.".into()))
 }
 
+/// Remove every provider's key (used by "Reset Magpie").
+pub(crate) fn remove_all_keys() {
+    for p in [Provider::Openai, Provider::Anthropic, Provider::Gemini, Provider::Custom] {
+        if let Ok(e) = entry(p) {
+            let _ = e.delete_credential();
+        }
+    }
+}
+
 #[tauri::command]
 pub async fn remove_ai_key(provider: Provider) -> CmdResult<()> {
     match entry(provider)?.delete_credential() {

@@ -22,6 +22,8 @@ pub struct AppState {
     pub db_path: PathBuf,
     /// Cached preview images and favicons.
     pub previews: PathBuf,
+    /// Local database snapshots.
+    pub backups: PathBuf,
     pub preview_worker: AtomicBool,
     pub ai_worker: AtomicBool,
 }
@@ -184,6 +186,7 @@ pub async fn start_import(
     options: ImportOptions,
 ) -> CmdResult<ImportSummary> {
     let (label, browser, items) = import::read_source(&source, &local_app_data(&app)?)?;
+    crate::data_commands::safety_backup(&state, magpie_core::data::BackupKind::BeforeImport)?;
     import::import(&state.db(), &label, &browser, &items, &options)
 }
 

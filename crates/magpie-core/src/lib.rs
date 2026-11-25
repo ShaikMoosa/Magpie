@@ -5,6 +5,7 @@
 pub mod ai;
 pub mod bookmarks;
 pub mod categories;
+pub mod data;
 pub mod db;
 pub mod error;
 pub mod html;

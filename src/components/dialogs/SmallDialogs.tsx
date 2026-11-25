@@ -82,7 +82,7 @@ export function OpenWarningDialog({ bookmark, onClose }: { bookmark: Bookmark; o
   );
 }
 
-function Confirm({ title, body, confirmLabel, onConfirm, onClose, icon }: { title: string; body: ReactNode; confirmLabel: string; onConfirm: () => void; onClose: () => void; icon: ReactNode }) {
+export function Confirm({ title, body, confirmLabel, onConfirm, onClose, icon }: { title: string; body: ReactNode; confirmLabel: string; onConfirm: () => void; onClose: () => void; icon: ReactNode }) {
   return (
     <Dialog
       open
