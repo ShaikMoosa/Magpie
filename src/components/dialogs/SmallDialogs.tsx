@@ -1,6 +1,6 @@
 import { Link2, ShieldAlert, ShieldCheck, Trash2 } from "lucide-react";
 import type { ReactNode } from "react";
-import { useEmptyTrash, useCounts } from "../../hooks/queries";
+import { useEmptyTrash, useCounts, useMarkSafe } from "../../hooks/queries";
 import { displayUrl, formatRelative } from "../../lib/format";
 import type { Bookmark } from "../../lib/types";
 import { toast } from "../../store/toast";
@@ -11,6 +11,7 @@ import { Dialog } from "../ui/Dialog";
 /** Shown when opening a suspicious or dangerous bookmark. */
 export function OpenWarningDialog({ bookmark, onClose }: { bookmark: Bookmark; onClose: () => void }) {
   const a = useBookmarkActions();
+  const markSafe = useMarkSafe();
   const dangerous = bookmark.securityStatus === "dangerous";
   return (
     <Dialog
@@ -30,6 +31,15 @@ export function OpenWarningDialog({ bookmark, onClose }: { bookmark: Bookmark; o
             }}
           >
             Copy URL
+          </button>
+          <button
+            className="text-[13px] font-medium text-ink-2 hover:text-ink"
+            onClick={() => {
+              markSafe.mutate([bookmark.id]);
+              onClose();
+            }}
+          >
+            Mark as safe
           </button>
           <div className="flex-1" />
           <Button

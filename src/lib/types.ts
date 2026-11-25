@@ -68,7 +68,32 @@ export interface BookmarkQuery {
   favouritesOnly?: boolean;
   security?: SecurityStatus | null;
   domain?: string | null;
+  tags?: string[];
+  source?: string | null;
+  addedWithinDays?: number | null;
   limit?: number;
+}
+
+export interface Facet {
+  value: string;
+  count: number;
+}
+
+export interface Facets {
+  domains: Facet[];
+  tags: Facet[];
+  sources: Facet[];
+  security: Facet[];
+}
+
+export interface RescanSummary {
+  scanned: number;
+  suspicious: number;
+}
+
+export interface SecurityOverride {
+  domain: string;
+  createdAt: string;
 }
 
 export interface Category {

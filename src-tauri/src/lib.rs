@@ -49,6 +49,11 @@ pub fn run() {
             commands::previews_dir,
             commands::fetch_metadata,
             commands::refresh_metadata,
+            commands::get_facets,
+            commands::rescan_bookmarks,
+            commands::mark_safe,
+            commands::list_overrides,
+            commands::remove_override,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

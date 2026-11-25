@@ -25,6 +25,8 @@ import { forwardRef, useEffect, useMemo, useState, type ReactNode } from "react"
 import { BookmarkCard, BookmarkCompact, BookmarkRow } from "../components/bookmarks/BookmarkItems";
 import { useBookmarkActions } from "../components/bookmarks/useBookmarkActions";
 import { TopBar } from "../components/layout/TopBar";
+import { activeFilterCount, FilterBar, NO_FILTERS, type FilterState } from "../components/library/Filters";
+import { SecurityAlertList, SecurityHeaderAction, SecuritySummary, TrustedSites } from "../components/library/SecurityAlerts";
 import { Button } from "../components/ui/Button";
 import { EmptyState } from "../components/ui/EmptyState";
 import { useBookmarks, useCategories, useCounts } from "../hooks/queries";
@@ -57,7 +59,7 @@ const META: Record<Exclude<LibraryView, "category">, { title: string; icon: Reac
 export const SearchBox = forwardRef<HTMLInputElement, { placeholder: string }>(function SearchBox({ placeholder }, ref) {
   const { search, setSearch } = useUi();
   return (
-    <div className="flex h-9 w-[280px] items-center gap-2 rounded-[10px] border border-line-strong bg-canvas px-3 focus-within:border-brand-500 focus-within:ring-[3px] focus-within:ring-brand-500/15">
+    <div className="flex h-9 w-[240px] items-center gap-2 rounded-[10px] border border-line-strong bg-canvas px-3 focus-within:border-brand-500 focus-within:ring-[3px] focus-within:ring-brand-500/15">
       <Search className="size-4 text-ink-3" />
       <input
         ref={ref}
@@ -77,19 +79,6 @@ export const SearchBox = forwardRef<HTMLInputElement, { placeholder: string }>(f
   );
 });
 
-function Chip({ active, onClick, children }: { active?: boolean; onClick: () => void; children: ReactNode }) {
-  return (
-    <button
-      onClick={onClick}
-      className={clsx(
-        "inline-flex h-9 items-center gap-1.5 rounded-[9px] border px-2.5 text-[13px] [&_svg]:size-3.5",
-        active ? "border-brand-400 bg-brand-50 text-brand-700" : "border-line-strong bg-canvas text-ink-2 hover:bg-subtle",
-      )}
-    >
-      {children}
-    </button>
-  );
-}
 
 function SortMenu() {
   const { sort, setSort } = useUi();
@@ -258,8 +247,9 @@ export function Library({ view, categoryId, searchRef }: { view: LibraryView; ca
   const { data: counts } = useCounts();
   const category = categories.find((c) => c.id === categoryId);
   const subcats = categories.filter((c) => c.parentId === categoryId);
-  const [favOnly, setFavOnly] = useState(false);
-  const { data: items = EMPTY, isLoading } = useBookmarks({ view, categoryId: categoryId ?? null, search, sort, favouritesOnly: favOnly });
+  const [filters, setFilters] = useState<FilterState>(NO_FILTERS);
+  const { data: items = EMPTY, isLoading } = useBookmarks({ view, categoryId: categoryId ?? null, search, sort, ...filters });
+  const filtering = activeFilterCount(filters) > 0;
   const ids = [...selection];
   const setVisible = useUi((s) => s.setVisible);
   useEffect(() => setVisible(items), [items, setVisible]);
@@ -314,7 +304,9 @@ export function Library({ view, categoryId, searchRef }: { view: LibraryView; ca
               </Button>
             </>
           )}
-          {view === "trash" ? (
+          {view === "security" ? (
+            <SecurityHeaderAction />
+          ) : view === "trash" ? (
             <Button
               className="border-red-200 text-danger"
               icon={<Trash2 />}
@@ -345,6 +337,8 @@ export function Library({ view, categoryId, searchRef }: { view: LibraryView; ca
           </div>
         )}
 
+        {view === "security" && <SecuritySummary />}
+
         {view === "trash" && items.length > 0 && (
           <div className="flex items-center gap-2.5 rounded-xl border border-amber-200 bg-warning-bg px-3.5 py-3 text-[13px]">
             <ShieldAlert className="size-4 text-warning" />
@@ -352,22 +346,21 @@ export function Library({ view, categoryId, searchRef }: { view: LibraryView; ca
           </div>
         )}
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <SearchBox ref={searchRef} placeholder={`Search ${view === "category" ? title : title.toLowerCase()}…`} />
-          {view !== "favourites" && view !== "trash" && (
-            <Chip active={favOnly} onClick={() => setFavOnly(!favOnly)}>
-              <Star className={clsx(favOnly && "fill-current")} /> Favourites {favOnly && <X />}
-            </Chip>
-          )}
-          <div className="flex-1" />
-          <SortMenu />
-          <ViewToggle />
+          <FilterBar view={view} value={filters} onChange={setFilters} />
+          <div className="flex flex-1 justify-end gap-2">
+            <SortMenu />
+            {view !== "security" && <ViewToggle />}
+          </div>
         </div>
 
         {ids.length > 0 && <BulkBar ids={ids} inTrash={view === "trash"} categories={categories} />}
 
         {isLoading ? null : items.length === 0 ? (
-          <EmptyForView view={view} searching={!!search.trim()} title={title} onAdd={() => openDialog({ kind: "add-bookmark" })} />
+          <EmptyForView view={view} searching={!!search.trim() || filtering} title={title} onAdd={() => openDialog({ kind: "add-bookmark" })} onClear={() => setFilters(NO_FILTERS)} />
+        ) : view === "security" ? (
+          <SecurityAlertList items={items} />
         ) : view === "recent" && sort === "recently_added" ? (
           groupByDay(items).map((g) => (
             <section key={g.label} className="flex flex-col gap-2.5">
@@ -380,12 +373,13 @@ export function Library({ view, categoryId, searchRef }: { view: LibraryView; ca
         ) : (
           <BookmarkCollection items={items} categories={categories} mode={viewMode} />
         )}
+        {view === "security" && <TrustedSites />}
       </div>
     </div>
   );
 }
 
-function EmptyForView({ view, searching, title, onAdd }: { view: LibraryView; searching: boolean; title: string; onAdd: () => void }) {
+function EmptyForView({ view, searching, title, onAdd, onClear }: { view: LibraryView; searching: boolean; title: string; onAdd: () => void; onClear: () => void }) {
   const setSearch = useUi((s) => s.setSearch);
   const navigate = useUi((s) => s.navigate);
   if (searching)
@@ -393,8 +387,17 @@ function EmptyForView({ view, searching, title, onAdd }: { view: LibraryView; se
       <EmptyState
         icon={<Search />}
         title="No results"
-        body="Check the spelling or try fewer words. Search covers titles, URLs, descriptions, categories and tags."
-        actions={<Button onClick={() => setSearch("")}>Clear search</Button>}
+        body="Check the spelling, use fewer words, or remove a filter. Search covers titles, URLs, descriptions, categories and tags."
+        actions={
+          <Button
+            onClick={() => {
+              setSearch("");
+              onClear();
+            }}
+          >
+            Clear search and filters
+          </Button>
+        }
       />
     );
   switch (view) {

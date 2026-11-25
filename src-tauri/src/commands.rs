@@ -263,3 +263,32 @@ fn run_preview_batches(app: &AppHandle, db_path: &std::path::Path, dir: &std::pa
         let _ = app.emit("previews-updated", batch.len());
     }
 }
+
+// ---------- Filters & security ----------
+
+#[tauri::command]
+pub async fn get_facets(state: State<'_, AppState>) -> CmdResult<magpie_core::models::Facets> {
+    bookmarks::facets(&state.db())
+}
+
+/// Re-run local URL checks (all bookmarks when `ids` is None).
+#[tauri::command]
+pub async fn rescan_bookmarks(state: State<'_, AppState>, ids: Option<Vec<String>>) -> CmdResult<magpie_core::models::RescanSummary> {
+    bookmarks::rescan(&state.db(), ids.as_deref())
+}
+
+/// Report a false positive: trust the bookmarks' domains.
+#[tauri::command]
+pub async fn mark_safe(state: State<'_, AppState>, ids: Vec<String>) -> CmdResult<usize> {
+    bookmarks::mark_safe(&state.db(), &ids)
+}
+
+#[tauri::command]
+pub async fn list_overrides(state: State<'_, AppState>) -> CmdResult<Vec<magpie_core::models::SecurityOverride>> {
+    bookmarks::list_overrides(&state.db())
+}
+
+#[tauri::command]
+pub async fn remove_override(state: State<'_, AppState>, domain: String) -> CmdResult<()> {
+    bookmarks::remove_override(&state.db(), &domain)
+}

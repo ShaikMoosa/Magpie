@@ -25,6 +25,7 @@ cat("Productivity", "#EA580C");
 const reading = cat("Reading List", "#DB2777");
 
 const marks: Bookmark[] = [];
+const overrides: { domain: string; createdAt: string }[] = [];
 function add(url: string, title: string, description: string | null, categoryId: string | null, hoursAgo: number, extra: Partial<Bookmark> = {}) {
   const domain = new URL(url).hostname.replace(/^www\./, "");
   marks.push({
@@ -40,7 +41,7 @@ add("https://paypa1-secure-login.com/verify", "Account verification required", "
   securityStatus: "suspicious", securityReasons: ["Looks like paypal but is a different site"],
 });
 add("https://mobbin.com", "Mobbin — Design Patterns", "The world's largest library of mobile and web app screenshots.", design.id, 30, { isFavourite: true });
-add("https://lucide.dev", "Lucide Icons", "Beautiful & consistent icon toolkit made by the community.", design.id, 40);
+add("https://lucide.dev", "Lucide Icons", "Beautiful & consistent icon toolkit made by the community.", design.id, 40, { tags: ["icons", "svg"], sourceBrowser: "Chrome" });
 add("https://www.nngroup.com/articles/", "Nielsen Norman — UX research methods", null, research.id, 80);
 add("https://paulgraham.com/greatwork.html", "How to Do Great Work", null, reading.id, 120);
 add("https://excalidraw.com", "Excalidraw — Virtual whiteboard", null, null, 3);
@@ -69,6 +70,11 @@ function descendants(cid: string): string[] {
 function list(q: BookmarkQuery) {
   let r = marks.filter((b) => (q.view === "trash" ? b.deletedAt : !b.deletedAt));
   if (q.view === "favourites" || q.favouritesOnly) r = r.filter((b) => b.isFavourite);
+  if (q.domain) r = r.filter((b) => b.domain === q.domain);
+  if (q.security) r = r.filter((b) => b.securityStatus === q.security);
+  if (q.source) r = r.filter((b) => (b.sourceBrowser ?? "manual") === q.source);
+  if (q.tags?.length) r = r.filter((b) => q.tags!.every((t) => b.tags.includes(t)));
+  if (q.addedWithinDays) r = r.filter((b) => +new Date(b.createdAt) >= now - q.addedWithinDays! * 86_400_000);
   if (q.view === "uncategorized") r = r.filter((b) => !b.categoryId);
   if (q.view === "security") r = r.filter((b) => b.securityStatus === "suspicious" || b.securityStatus === "dangerous");
   if (q.view === "category" && q.categoryId) {
@@ -187,6 +193,25 @@ export function installMockBackend() {
       }
       case "reorder_categories": return null;
       case "previews_dir": return "";
+      case "get_facets": {
+        const live = marks.filter((b) => !b.deletedAt);
+        const tally = (vals: string[]) => Object.entries(vals.reduce<Record<string, number>>((m, v) => ((m[v] = (m[v] ?? 0) + 1), m), {})).map(([value, count]) => ({ value, count })).sort((x, y) => y.count - x.count);
+        return { domains: tally(live.map((b) => b.domain)), tags: tally(live.flatMap((b) => b.tags)), sources: tally(live.map((b) => b.sourceBrowser ?? "manual")), security: tally(live.map((b) => b.securityStatus)) };
+      }
+      case "rescan_bookmarks": return { scanned: marks.filter((b) => !b.deletedAt).length, suspicious: marks.filter((b) => !b.deletedAt && b.securityStatus === "suspicious").length };
+      case "mark_safe": {
+        const domains = new Set(marks.filter((b) => a.ids.includes(b.id)).map((b) => b.domain));
+        domains.forEach((d) => overrides.push({ domain: d, createdAt: new Date().toISOString() }));
+        marks.forEach((b) => domains.has(b.domain) && Object.assign(b, { securityStatus: "not_checked", securityReasons: ["You marked this site as safe"] }));
+        return domains.size;
+      }
+      case "list_overrides": return overrides;
+      case "remove_override": {
+        const i = overrides.findIndex((o) => o.domain === a.domain);
+        if (i >= 0) overrides.splice(i, 1);
+        marks.forEach((b) => b.domain === a.domain && b.domain.startsWith("paypa1") && Object.assign(b, { securityStatus: "suspicious", securityReasons: ["Looks like paypal but is a different site"] }));
+        return null;
+      }
       case "refresh_metadata": return null;
       case "fetch_metadata": {
         const host = new URL(a.url).hostname.replace(/^www\./, "");
