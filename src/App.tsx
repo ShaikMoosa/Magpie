@@ -1,5 +1,5 @@
 import { useAiProgressListener } from "./components/library/AiReview";
-import { useScanProgressListener } from "./components/library/ExternalScan";
+import { ScanConsentHost, useScanProgressListener } from "./components/library/ExternalScan";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { listen } from "@tauri-apps/api/event";
 import { api } from "./lib/api";
@@ -8,7 +8,7 @@ import { useEffect, useRef } from "react";
 import { useBookmarkActions } from "./components/bookmarks/useBookmarkActions";
 import { BookmarkDialog } from "./components/dialogs/BookmarkDialog";
 import { CategoryDialog, DeleteCategoryDialog } from "./components/dialogs/CategoryDialogs";
-import { ConfirmTrashDialog, EmptyTrashDialog, OpenWarningDialog } from "./components/dialogs/SmallDialogs";
+import { ConfirmTrashDialog, EmptyTrashDialog, AddTagsDialog, OpenWarningDialog } from "./components/dialogs/SmallDialogs";
 import { ImportDialog } from "./components/dialogs/ImportDialog";
 import { useCategories, useCounts } from "./hooks/queries";
 import { Welcome } from "./pages/Welcome";
@@ -42,7 +42,9 @@ function Dialogs() {
     case "delete-category":
       return <DeleteCategoryDialog category={dialog.category} onClose={closeDialog} />;
     case "open-warning":
-      return <OpenWarningDialog bookmark={dialog.bookmark} onClose={closeDialog} />;
+      return <OpenWarningDialog bookmark={dialog.bookmark} private={dialog.private} onClose={closeDialog} />;
+    case "add-tags":
+      return <AddTagsDialog ids={dialog.ids} onClose={closeDialog} />;
     case "confirm-delete":
       return <ConfirmTrashDialog ids={dialog.ids} onClose={closeDialog} />;
     case "empty-trash":
@@ -67,7 +69,7 @@ function useShortcuts(focusSearch: () => void) {
         return;
       }
       if (ui.dialog) return; // Radix handles Esc/focus inside dialogs
-      if (ctrl && key === "n") {
+      if (ctrl && !e.shiftKey && key === "n") {
         e.preventDefault();
         ui.openDialog({ kind: "add-bookmark" });
       } else if (ctrl && key === "i") {
@@ -97,6 +99,12 @@ function useShortcuts(focusSearch: () => void) {
         );
       } else if (key === "f2" && selected.length === 1) {
         a.edit(selected[0]);
+      } else if (ctrl && e.shiftKey && key === "c" && selected.length === 1) {
+        e.preventDefault();
+        void a.copyUrl(selected[0]);
+      } else if (ctrl && e.shiftKey && key === "n" && selected.length === 1) {
+        e.preventDefault();
+        a.openPrivate(selected[0]);
       }
     };
     window.addEventListener("keydown", onKey);
@@ -177,6 +185,7 @@ function Shell() {
         </>
       )}
       <Dialogs />
+      <ScanConsentHost />
       <Toaster />
     </div>
   );

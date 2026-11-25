@@ -11,7 +11,8 @@ export type DialogState =
   | { kind: "edit-bookmark"; bookmark: Bookmark }
   | { kind: "category"; category?: Category; parentId?: string | null }
   | { kind: "delete-category"; category: Category }
-  | { kind: "open-warning"; bookmark: Bookmark }
+  | { kind: "open-warning"; bookmark: Bookmark; private?: boolean }
+  | { kind: "add-tags"; ids: string[] }
   | { kind: "confirm-delete"; ids: string[] }
   | { kind: "empty-trash" }
   | { kind: "import"; source?: "chrome" | "edge" | "html" }

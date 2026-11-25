@@ -395,7 +395,6 @@ export function BookmarkDialog({ mode, bookmark, initialUrl, onClose }: { mode: 
 
   return (
     <Dialog open onClose={onClose} title="Edit bookmark" subtitle={bookmark?.title} icon={<Pencil />} width={800} footer={footer}>
-      {scan.dialog}
       <div className="flex">
         <div className="min-w-0 flex-1">{form}</div>
         {bookmark && (

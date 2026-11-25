@@ -267,7 +267,7 @@ export function installMockBackend() {
           bookmarks: counts().all, categories: cats.length, trash: counts().trash,
         };
       case "reveal_data_folder": return null;
-      case "export_library": return counts().all;
+      case "export_library": return a.ids ? a.ids.length : counts().all;
       case "get_backup_config": return backupCfg;
       case "save_backup_config": backupCfg = a.config; return backupCfg;
       case "list_backups": return mockBackups;
@@ -301,6 +301,14 @@ export function installMockBackend() {
         scanUsage.lastScanAt = new Date().toISOString();
         return live.length;
       }
+      case "open_private": {
+        const b = marks.find((x) => x.id === a.id)!;
+        if (!a.confirmed && (b.securityStatus === "suspicious" || b.securityStatus === "dangerous")) return { opened: false, bookmark: b };
+        return { opened: true, bookmark: b };
+      }
+      case "add_tags":
+        for (const b of marks.filter((x) => a.ids.includes(x.id))) b.tags = [...new Set([...b.tags, ...a.tags])].sort();
+        return a.ids.length;
       case "list_categories": return withCounts();
       case "create_category": {
         const i = a.input as CategoryInput;
@@ -329,7 +337,10 @@ export function installMockBackend() {
         const tally = (vals: string[]) => Object.entries(vals.reduce<Record<string, number>>((m, v) => ((m[v] = (m[v] ?? 0) + 1), m), {})).map(([value, count]) => ({ value, count })).sort((x, y) => y.count - x.count);
         return { domains: tally(live.map((b) => b.domain)), tags: tally(live.flatMap((b) => b.tags)), sources: tally(live.map((b) => b.sourceBrowser ?? "manual")), security: tally(live.map((b) => b.securityStatus)) };
       }
-      case "rescan_bookmarks": return { scanned: marks.filter((b) => !b.deletedAt).length, suspicious: marks.filter((b) => !b.deletedAt && b.securityStatus === "suspicious").length };
+      case "rescan_bookmarks": {
+        const t = marks.filter((b) => !b.deletedAt && (!a.ids || a.ids.includes(b.id)));
+        return { scanned: t.length, suspicious: t.filter((b) => b.securityStatus === "suspicious").length };
+      }
       case "mark_safe": {
         const domains = new Set(marks.filter((b) => a.ids.includes(b.id)).map((b) => b.domain));
         domains.forEach((d) => overrides.push({ domain: d, createdAt: new Date().toISOString() }));

@@ -28,8 +28,8 @@ pub async fn reveal_data_folder(app: AppHandle, state: State<'_, AppState>) -> C
 /// Write the library to `path` (chosen in the save dialog). Returns how many
 /// bookmarks were exported.
 #[tauri::command]
-pub async fn export_library(state: State<'_, AppState>, format: ExportFormat, path: PathBuf) -> CmdResult<usize> {
-    data::export(&state.db(), format, &path)
+pub async fn export_library(state: State<'_, AppState>, format: ExportFormat, path: PathBuf, ids: Option<Vec<String>>) -> CmdResult<usize> {
+    data::export(&state.db(), format, &path, ids.as_deref())
 }
 
 #[tauri::command]

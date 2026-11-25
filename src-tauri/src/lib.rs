@@ -1,6 +1,7 @@
 mod ai_commands;
 mod commands;
 mod data_commands;
+mod private_browser;
 mod security_commands;
 
 use std::sync::Mutex;
@@ -47,6 +48,8 @@ pub fn run() {
             commands::purge_bookmarks,
             commands::empty_trash,
             commands::open_bookmark,
+            commands::open_private,
+            commands::add_tags,
             commands::list_categories,
             commands::create_category,
             commands::update_category,

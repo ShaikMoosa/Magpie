@@ -1,6 +1,6 @@
-import { Link2, ShieldAlert, ShieldCheck, Trash2 } from "lucide-react";
+import { Hash, Link2, ShieldAlert, ShieldCheck, Trash2 } from "lucide-react";
 import { useState, type ReactNode } from "react";
-import { useEmptyTrash, useCounts, useMarkSafe, useSecuritySettings } from "../../hooks/queries";
+import { useAddTags, useEmptyTrash, useCounts, useMarkSafe, useSecuritySettings } from "../../hooks/queries";
 import { displayUrl, formatRelative } from "../../lib/format";
 import type { Bookmark } from "../../lib/types";
 import { toast } from "../../store/toast";
@@ -9,7 +9,7 @@ import { Button } from "../ui/Button";
 import { Dialog } from "../ui/Dialog";
 
 /** Shown when opening a suspicious or dangerous bookmark. */
-export function OpenWarningDialog({ bookmark, onClose }: { bookmark: Bookmark; onClose: () => void }) {
+export function OpenWarningDialog({ bookmark, private: inPrivate, onClose }: { bookmark: Bookmark; private?: boolean; onClose: () => void }) {
   const a = useBookmarkActions();
   const markSafe = useMarkSafe();
   const dangerous = bookmark.securityStatus === "dangerous";
@@ -50,7 +50,8 @@ export function OpenWarningDialog({ bookmark, onClose }: { bookmark: Bookmark; o
             className="!text-danger"
             disabled={blocked && !understood}
             onClick={() => {
-              a.openConfirmed(bookmark);
+              if (inPrivate) a.openPrivateConfirmed(bookmark);
+              else a.openConfirmed(bookmark);
               onClose();
             }}
           >
@@ -150,5 +151,56 @@ export function EmptyTrashDialog({ onClose }: { onClose: () => void }) {
       onConfirm={() => empty.mutate(undefined, { onSuccess: (k) => toast({ type: "success", title: `Deleted ${k} bookmarks permanently` }) })}
       onClose={onClose}
     />
+  );
+}
+
+export function AddTagsDialog({ ids, onClose }: { ids: string[]; onClose: () => void }) {
+  const addTags = useAddTags();
+  const [value, setValue] = useState("");
+  const tags = value
+    .split(/[,\s]+/)
+    .map((t) => t.replace(/^#/, "").trim().toLowerCase())
+    .filter(Boolean);
+  const submit = () =>
+    tags.length &&
+    addTags.mutate(
+      { ids, tags },
+      {
+        onSuccess: (n) => {
+          toast({ type: "success", title: `Tagged ${n} bookmark${n === 1 ? "" : "s"}`, body: tags.map((t) => `#${t}`).join(" ") });
+          onClose();
+        },
+      },
+    );
+  return (
+    <Dialog
+      open
+      onClose={onClose}
+      title={`Add tags to ${ids.length} bookmark${ids.length === 1 ? "" : "s"}`}
+      icon={<Hash />}
+      width={460}
+      footer={
+        <>
+          <div className="flex-1" />
+          <Button onClick={onClose}>Cancel</Button>
+          <Button variant="primary" disabled={!tags.length || addTags.isPending} onClick={() => void submit()}>
+            Add tags
+          </Button>
+        </>
+      }
+    >
+      <div className="flex flex-col gap-2 px-6 py-5">
+        <input
+          autoFocus
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && void submit()}
+          placeholder="#inspiration #to-read"
+          aria-label="Tags"
+          className="h-10 rounded-[10px] border border-line-strong px-3 text-sm outline-none focus:border-brand-500"
+        />
+        <p className="text-xs text-ink-3">Separate with spaces or commas. Existing tags are kept.</p>
+      </div>
+    </Dialog>
   );
 }

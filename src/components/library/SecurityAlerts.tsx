@@ -43,7 +43,6 @@ export function SecurityHeaderAction() {
       <Button variant="primary" icon={scan.running ? <Loader2 className="animate-spin" /> : <ShieldCheck />} disabled={scan.running} onClick={() => scan.start(null)}>
         {scan.running && scan.progress ? `Scanning ${scan.progress.done}/${scan.progress.total}…` : scan.running ? "Scanning…" : "Scan with providers"}
       </Button>
-      {scan.dialog}
     </>
   );
 }

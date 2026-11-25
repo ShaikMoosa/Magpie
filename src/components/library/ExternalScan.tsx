@@ -1,7 +1,7 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { listen } from "@tauri-apps/api/event";
 import { ShieldCheck } from "lucide-react";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect } from "react";
 import { create } from "zustand";
 import { useSecuritySettings } from "../../hooks/queries";
 import { api, errorMessage } from "../../lib/api";
@@ -11,6 +11,12 @@ import { Button } from "../ui/Button";
 import { Dialog } from "../ui/Dialog";
 
 const LABELS = { google: "Google Safe Browsing", urlhaus: "URLhaus", virustotal: "VirusTotal" } as const;
+
+/** Pending "send URLs?" confirmation, shown by <ScanConsentHost /> at the app root. */
+const useScanAsk = create<{ ask: { ids: string[] | null } | null; set: (a: { ids: string[] | null } | null) => void }>()((set) => ({
+  ask: null,
+  set: (ask) => set({ ask }),
+}));
 
 export const useScanProgress = create<{ progress: ScanProgress | null; set: (p: ScanProgress | null) => void }>()((set) => ({
   progress: null,
@@ -49,32 +55,38 @@ export function useScanProgressListener() {
   }, [qc, setProgress]);
 }
 
-/**
- * Start an external scan. When consent is "ask each time" the user confirms
- * first in `dialog`, which the caller renders.
- */
+async function runScan(ids: string[] | null, confirmed: boolean, expiryDays: number) {
+  try {
+    const n = await api.scanBookmarks(ids, confirmed);
+    if (!n) toast({ type: "info", title: ids ? "Nothing to scan" : "Everything was checked recently", body: ids ? "Sites you marked as safe are never sent." : `Results are kept for ${expiryDays} days.` });
+  } catch (e) {
+    toast({ type: "error", title: "Couldn't start the scan", body: errorMessage(e) });
+  }
+}
+
+/** Start an external scan; with consent "ask each time" the user confirms first. */
 export function useExternalScan() {
   const { data: settings } = useSecuritySettings();
-  const [ask, setAsk] = useState<{ ids: string[] | null } | null>(null);
+  const setAsk = useScanAsk((s) => s.set);
   const progress = useScanProgress((s) => s.progress);
   const providers = activeProviders(settings);
   const available = !!settings?.config.enabled && settings.config.consent !== "never" && providers.length > 0;
   const running = !!progress || !!settings?.running;
-
-  const run = async (ids: string[] | null, confirmed: boolean) => {
-    try {
-      const n = await api.scanBookmarks(ids, confirmed);
-      if (!n) toast({ type: "info", title: "Everything was checked recently", body: `Results are kept for ${settings?.config.expiryDays ?? 7} days.` });
-    } catch (e) {
-      toast({ type: "error", title: "Couldn't start the scan", body: errorMessage(e) });
-    }
-  };
   const start = (ids: string[] | null) => {
     if (settings?.config.consent === "ask") setAsk({ ids });
-    else void run(ids, false);
+    else void runScan(ids, false, settings?.config.expiryDays ?? 7);
   };
+  return { start, available, running, progress, providers };
+}
 
-  const dialog: ReactNode = ask && settings && (
+/** The consent dialog for scans; render once at the app root. */
+export function ScanConsentHost() {
+  const { data: settings } = useSecuritySettings();
+  const ask = useScanAsk((s) => s.ask);
+  const setAsk = useScanAsk((s) => s.set);
+  const providers = activeProviders(settings);
+  if (!ask || !settings) return null;
+  return (
     <Dialog
       open
       onClose={() => setAsk(null)}
@@ -91,7 +103,7 @@ export function useExternalScan() {
             onClick={() => {
               const ids = ask.ids;
               setAsk(null);
-              void run(ids, true);
+              void runScan(ids, true, settings.config.expiryDays);
             }}
           >
             Send and scan
@@ -110,6 +122,4 @@ export function useExternalScan() {
       </div>
     </Dialog>
   );
-
-  return { start, dialog, available, running, progress, providers };
 }

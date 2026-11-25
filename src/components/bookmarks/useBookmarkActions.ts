@@ -1,5 +1,7 @@
-import { useMoveBookmarks, useOpenBookmark, usePurge, useRestore, useSetFavourite, useTrash } from "../../hooks/queries";
-import type { Bookmark } from "../../lib/types";
+import { save as saveFile } from "@tauri-apps/plugin-dialog";
+import { useMoveBookmarks, useOpenBookmark, useOpenPrivate, usePurge, useRescan, useRestore, useSetFavourite, useTrash } from "../../hooks/queries";
+import { useExternalScan } from "../library/ExternalScan";
+import type { Bookmark, ExportFormat } from "../../lib/types";
 import { api, errorMessage } from "../../lib/api";
 import { toast } from "../../store/toast";
 import { usePrefs, useUi } from "../../store/ui";
@@ -14,6 +16,9 @@ export function useBookmarkActions() {
   const trashM = useTrash();
   const restoreM = useRestore();
   const purgeM = usePurge();
+  const priv = useOpenPrivate();
+  const rescan = useRescan();
+  const scan = useExternalScan();
 
   return {
     open: (bookmark: Bookmark) =>
@@ -26,6 +31,30 @@ export function useBookmarkActions() {
         },
       ),
     openConfirmed: (bookmark: Bookmark) => open.mutate({ bookmark, confirmed: true }),
+    openPrivate: (bookmark: Bookmark) =>
+      priv.mutate(
+        { bookmark },
+        {
+          onSuccess: (r) => {
+            if (!r.opened) openDialog({ kind: "open-warning", bookmark: r.bookmark, private: true });
+          },
+        },
+      ),
+    openPrivateConfirmed: (bookmark: Bookmark) => priv.mutate({ bookmark, confirmed: true }),
+    /** Providers when set up (asks first if required), otherwise local checks. */
+    scan: (ids: string[]) => (scan.available ? scan.start(ids) : rescan.mutate(ids)),
+    addTags: (ids: string[]) => openDialog({ kind: "add-tags", ids }),
+    exportSelection: async (ids: string[], format: ExportFormat) => {
+      try {
+        const stamp = new Date().toISOString().slice(0, 10);
+        const path = await saveFile({ defaultPath: `magpie-selection-${stamp}.${format}`, filters: [{ name: format.toUpperCase(), extensions: [format] }] });
+        if (!path) return;
+        const n = await api.exportLibrary(format, path, ids);
+        toast({ type: "success", title: `Exported ${n} bookmark${n === 1 ? "" : "s"}`, body: path });
+      } catch (e) {
+        toast({ type: "error", title: "Couldn't export", body: errorMessage(e) });
+      }
+    },
     copyUrl: async (bookmark: Bookmark) => {
       await navigator.clipboard.writeText(bookmark.url);
       toast({ type: "success", title: "URL copied" });
