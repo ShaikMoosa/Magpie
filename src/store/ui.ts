@@ -4,7 +4,7 @@ import type { Bookmark, Category, LibraryView, Sort, ViewMode } from "../lib/typ
 
 export type Route = { page: "dashboard" } | { page: "library"; view: LibraryView; categoryId?: string } | { page: "settings"; section: SettingsSection };
 
-export type SettingsSection = "general" | "ai" | "shortcuts" | "about";
+export type SettingsSection = "general" | "ai" | "data" | "shortcuts" | "about";
 
 export type DialogState =
   | { kind: "add-bookmark"; url?: string }

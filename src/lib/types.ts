@@ -253,3 +253,35 @@ export interface AiProgress {
   finished: boolean;
   error: string | null;
 }
+
+export type ExportFormat = "json" | "html" | "csv";
+export type BackupKind = "auto" | "manual" | "before-import" | "before-restore";
+
+export interface StorageInfo {
+  dbPath: string;
+  dataDir: string;
+  backupsDir: string;
+  databaseBytes: number;
+  previewsBytes: number;
+  backupsBytes: number;
+  bookmarks: number;
+  categories: number;
+  trash: number;
+}
+
+export interface BackupConfig {
+  daily: boolean;
+  keep: number;
+}
+
+export interface BackupInfo {
+  name: string;
+  kind: BackupKind;
+  createdAt: string;
+  size: number;
+}
+
+export interface BackupSummary {
+  bookmarks: number;
+  categories: number;
+}

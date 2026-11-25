@@ -5,7 +5,7 @@ use rusqlite::Connection;
 
 use crate::error::Result;
 
-const MIGRATIONS: &[&str] = &[
+pub(crate) const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/001_init.sql"),
     include_str!("../migrations/002_metadata.sql"),
     include_str!("../migrations/003_security_overrides.sql"),
@@ -33,6 +33,12 @@ fn configure(conn: &Connection) -> Result<()> {
     conn.busy_timeout(Duration::from_secs(5))?;
     conn.execute_batch("PRAGMA foreign_keys = ON;")?;
     Ok(())
+}
+
+/// Bring a database (e.g. one just restored from an older backup) up to date.
+pub fn upgrade(conn: &Connection) -> Result<()> {
+    configure(conn)?;
+    migrate(conn)
 }
 
 fn migrate(conn: &Connection) -> Result<()> {

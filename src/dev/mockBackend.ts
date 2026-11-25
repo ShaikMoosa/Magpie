@@ -50,6 +50,15 @@ add("https://www.awwwards.com/websites/", "Awwwards — Website inspiration", "T
 add("https://docs.rs/serde", "serde — Rust docs", "A generic serialization/deserialization framework.", null, 7);
 add("https://arxiv.org/abs/2401.00001", "A survey of retrieval methods", null, null, 26);
 
+// --- Data & Storage (mock) ---
+let previewsBytes = 34_100_000;
+let backupCfg = { daily: true, keep: 7 };
+const mockBackups = [
+  { name: "magpie-a-auto.db", kind: "auto", createdAt: iso(3), size: 12_400_000 },
+  { name: "magpie-b-auto.db", kind: "auto", createdAt: iso(27), size: 12_300_000 },
+  { name: "magpie-c-before-import.db", kind: "before-import", createdAt: iso(140), size: 11_800_000 },
+];
+
 // --- AI (mock) ---
 let aiConfig: AiConfig = {
   enabled: false, provider: "anthropic", model: "claude-opus-5-5", endpoint: "", mode: "suggestion",
@@ -243,6 +252,26 @@ export function installMockBackend() {
           rejected.add(bid);
         }
         return a.ids.length;
+      case "get_storage_info":
+        return {
+          dbPath: String.raw`C:\Users\you\AppData\Roaming\com.shaikmoosa.magpie\magpie.db`, dataDir: "", backupsDir: String.raw`C:\Users\you\AppData\Roaming\com.shaikmoosa.magpie\backups`,
+          databaseBytes: 9_600_000, previewsBytes: previewsBytes, backupsBytes: mockBackups.reduce((n, b) => n + b.size, 0),
+          bookmarks: counts().all, categories: cats.length, trash: counts().trash,
+        };
+      case "reveal_data_folder": return null;
+      case "export_library": return counts().all;
+      case "get_backup_config": return backupCfg;
+      case "save_backup_config": backupCfg = a.config; return backupCfg;
+      case "list_backups": return mockBackups;
+      case "create_backup": {
+        const b = { name: `magpie-${Date.now()}-manual.db`, kind: "manual", createdAt: new Date().toISOString(), size: 12_600_000 };
+        mockBackups.unshift(b);
+        return b;
+      }
+      case "inspect_backup": return { bookmarks: 1248, categories: 9 };
+      case "restore_backup": return { bookmarks: 1248, categories: 9 };
+      case "clear_preview_cache": { const n = previewsBytes; previewsBytes = 0; return n; }
+      case "reset_app_data": marks.length = 0; cats.length = 0; return null;
       case "list_categories": return withCounts();
       case "create_category": {
         const i = a.input as CategoryInput;

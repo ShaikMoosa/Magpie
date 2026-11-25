@@ -17,7 +17,7 @@ const SELECT: &str = "SELECT b.id, b.url, b.title, b.description, b.domain, b.fa
     b.category_id, b.is_favourite, b.source_browser, b.source_folder, b.security_status, b.security_reasons,
     b.security_source, b.security_checked_at, b.created_at, b.updated_at, b.last_opened_at, b.open_count,
     b.deleted_at, b.metadata_status,
-    (SELECT group_concat(t.name, char(31)) FROM bookmark_tags bt JOIN tags t ON t.id = bt.tag_id
+    (SELECT group_concat(t.name, char(31) ORDER BY t.name) FROM bookmark_tags bt JOIN tags t ON t.id = bt.tag_id
       WHERE bt.bookmark_id = b.id) AS tags
     FROM bookmarks b";
 
