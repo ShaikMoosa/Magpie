@@ -1,7 +1,9 @@
-import { AlertTriangle, Clock, Link2, RefreshCw, Shield, ShieldAlert, ShieldCheck, Trash2, X } from "lucide-react";
+import { AlertTriangle, Clock, Link2, Loader2, RefreshCw, Shield, ShieldAlert, ShieldCheck, Trash2, X } from "lucide-react";
 import clsx from "clsx";
 import type { ReactNode } from "react";
-import { useFacets, useMarkSafe, useOverrides, useRemoveOverride, useRescan } from "../../hooks/queries";
+import { useFacets, useMarkSafe, useOverrides, useRemoveOverride, useRescan, useSecuritySettings } from "../../hooks/queries";
+import { useUi } from "../../store/ui";
+import { activeProviders, useExternalScan } from "./ExternalScan";
 import { displayUrl, formatDate, formatRelative } from "../../lib/format";
 import type { Bookmark } from "../../lib/types";
 import { useBookmarkActions } from "../bookmarks/useBookmarkActions";
@@ -23,16 +25,41 @@ function Stat({ icon, n, label, box }: { icon: ReactNode; n: number; label: stri
 
 export function SecurityHeaderAction() {
   const rescan = useRescan();
-  return (
-    <Button variant="primary" icon={<RefreshCw className={clsx(rescan.isPending && "animate-spin")} />} disabled={rescan.isPending} onClick={() => rescan.mutate(null)}>
-      Scan all bookmarks
+  const scan = useExternalScan();
+  const local = (
+    <Button
+      variant={scan.available ? "secondary" : "primary"}
+      icon={<RefreshCw className={clsx(rescan.isPending && "animate-spin")} />}
+      disabled={rescan.isPending}
+      onClick={() => rescan.mutate(null)}
+    >
+      {scan.available ? "Re-check locally" : "Scan all bookmarks"}
     </Button>
+  );
+  if (!scan.available) return local;
+  return (
+    <>
+      {local}
+      <Button variant="primary" icon={scan.running ? <Loader2 className="animate-spin" /> : <ShieldCheck />} disabled={scan.running} onClick={() => scan.start(null)}>
+        {scan.running && scan.progress ? `Scanning ${scan.progress.done}/${scan.progress.total}…` : scan.running ? "Scanning…" : "Scan with providers"}
+      </Button>
+      {scan.dialog}
+    </>
   );
 }
 
 /** Stats and scanner status (Figma 05). */
+const SCANNERS = [
+  ["google", "Google Safe Browsing"],
+  ["urlhaus", "URLhaus"],
+  ["virustotal", "VirusTotal"],
+] as const;
+
 export function SecuritySummary() {
   const { data: facets } = useFacets();
+  const { data: settings } = useSecuritySettings();
+  const active = activeProviders(settings);
+  const navigate = useUi((s) => s.navigate);
   const n = (s: string) => facets?.security.find((f) => f.value === s)?.count ?? 0;
   return (
     <>
@@ -47,12 +74,19 @@ export function SecuritySummary() {
         <span className="flex items-center gap-1.5">
           <span className="size-[7px] rounded-full bg-success" /> Local heuristics
         </span>
-        {["Google Safe Browsing", "URLhaus", "VirusTotal"].map((s) => (
-          <span key={s} className="flex items-center gap-1.5 text-ink-3">
-            <span className="size-[7px] rounded-full bg-ink-3" /> {s}
-            <span className="rounded-md bg-muted px-1.5 text-xs">Milestone 2</span>
-          </span>
-        ))}
+        {SCANNERS.map(([id, label]) => {
+          const on = settings?.config.enabled && active.includes(id);
+          return (
+            <span key={id} className={clsx("flex items-center gap-1.5", !on && "text-ink-3")}>
+              <span className={clsx("size-[7px] rounded-full", on ? "bg-success" : "bg-ink-3")} /> {label}
+              {!on && (
+                <button className="rounded-md bg-muted px-1.5 text-xs hover:text-ink" onClick={() => navigate({ page: "settings", section: "security" })}>
+                  Set up
+                </button>
+              )}
+            </span>
+          );
+        })}
         <span className="flex-1" />
         <span className="text-xs text-ink-3">Local checks never mark a site as safe on their own.</span>
       </div>

@@ -12,6 +12,7 @@ pub mod html;
 pub mod import;
 pub mod metadata;
 pub mod models;
+pub mod scanners;
 pub mod security;
 pub mod urls;
 

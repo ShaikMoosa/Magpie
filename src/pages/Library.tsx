@@ -54,7 +54,7 @@ const META: Record<Exclude<LibraryView, "category">, { title: string; icon: Reac
   favourites: { title: "Favourites", icon: <Star />, box: "bg-warning-bg text-warning", sub: (n) => `${plural(n, "bookmark")} you come back to` },
   recent: { title: "Recently Added", icon: <Clock />, box: "bg-brand-50 text-brand-600", sub: (n) => `${plural(n, "bookmark")} added in the last 30 days` },
   uncategorized: { title: "Uncategorized", icon: <Inbox />, box: "bg-muted text-ink-2", sub: (n) => `${plural(n, "bookmark")} without a category` },
-  security: { title: "Security Alerts", icon: <ShieldAlert />, box: "bg-danger-bg text-danger", sub: () => "Flagged by local checks. A link without a warning is not guaranteed to be safe." },
+  security: { title: "Security Alerts", icon: <ShieldAlert />, box: "bg-danger-bg text-danger", sub: () => "Flagged by local checks and your security providers. A link without a warning is not guaranteed to be safe." },
   trash: { title: "Trash", icon: <Trash2 />, box: "bg-muted text-ink-2", sub: (n) => `${plural(n, "bookmark")} · kept until you restore them or empty Trash` },
 };
 

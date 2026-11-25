@@ -59,6 +59,14 @@ const mockBackups = [
   { name: "magpie-c-before-import.db", kind: "before-import", createdAt: iso(140), size: 11_800_000 },
 ];
 
+// --- Security scanners (mock) ---
+let secCfg = {
+  enabled: false, google: false, urlhaus: false, virustotal: false, schedule: "on_save_weekly", consent: "ask",
+  stripTracking: true, warnSuspicious: true, blockDangerous: true, expiryDays: 7,
+};
+const scanKeys = new Set<string>();
+const scanUsage = { month: "2026-11", google: 0, urlhaus: 0, virustotal: 0, lastScanAt: null as string | null, lastError: null as string | null };
+
 // --- AI (mock) ---
 let aiConfig: AiConfig = {
   enabled: false, provider: "anthropic", model: "claude-opus-5-5", endpoint: "", mode: "suggestion",
@@ -272,6 +280,27 @@ export function installMockBackend() {
       case "restore_backup": return { bookmarks: 1248, categories: 9 };
       case "clear_preview_cache": { const n = previewsBytes; previewsBytes = 0; return n; }
       case "reset_app_data": marks.length = 0; cats.length = 0; return null;
+      case "get_security_settings": return { config: secCfg, keys: [...scanKeys], usage: scanUsage, running: false };
+      case "save_security_config": secCfg = a.config; return secCfg;
+      case "set_scan_key":
+        await new Promise((r) => setTimeout(r, 500));
+        if (a.key === "bad") throw { code: "NETWORK", message: "Google Safe Browsing rejected the API key. Check it in Settings › Security." };
+        scanKeys.add(a.provider); return null;
+      case "remove_scan_key": scanKeys.delete(a.provider); return null;
+      case "scan_bookmarks": {
+        if (secCfg.consent === "ask" && !a.confirmed) throw { code: "VALIDATION", message: "Confirm before URLs are sent to scanners." };
+        const live = marks.filter((b) => !b.deletedAt && (!a.ids || a.ids.includes(b.id)));
+        for (const b of live) {
+          const bad = b.domain.includes("paypa1");
+          b.securityStatus = bad ? "dangerous" : b.securityStatus === "suspicious" ? "suspicious" : "no_threat";
+          b.securitySource = "Google Safe Browsing · URLhaus · Local heuristics";
+          if (bad) b.securityReasons = ["Google Safe Browsing lists this as phishing or a deceptive site", ...b.securityReasons];
+          b.securityCheckedAt = new Date().toISOString();
+        }
+        scanUsage.google += live.length;
+        scanUsage.lastScanAt = new Date().toISOString();
+        return live.length;
+      }
       case "list_categories": return withCounts();
       case "create_category": {
         const i = a.input as CategoryInput;

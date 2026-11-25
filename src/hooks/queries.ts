@@ -11,6 +11,7 @@ export const keys = {
   overrides: ["overrides"],
   ai: ["ai"],
   suggestions: ["ai-suggestions"],
+  securitySettings: ["security-settings"],
 };
 
 export function useAiSettings() {
@@ -19,6 +20,10 @@ export function useAiSettings() {
 
 export function useAiSuggestions(enabled = true) {
   return useQuery({ queryKey: keys.suggestions, queryFn: api.listAiSuggestions, enabled });
+}
+
+export function useSecuritySettings() {
+  return useQuery({ queryKey: keys.securitySettings, queryFn: api.getSecuritySettings });
 }
 
 export function useFacets() {
@@ -52,6 +57,7 @@ function useInvalidate() {
       qc.invalidateQueries({ queryKey: keys.overrides }),
       qc.invalidateQueries({ queryKey: keys.suggestions }),
       qc.invalidateQueries({ queryKey: keys.ai }),
+      qc.invalidateQueries({ queryKey: keys.securitySettings }),
     ]);
 }
 

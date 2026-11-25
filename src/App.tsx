@@ -1,4 +1,5 @@
 import { useAiProgressListener } from "./components/library/AiReview";
+import { useScanProgressListener } from "./components/library/ExternalScan";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { listen } from "@tauri-apps/api/event";
 import { api } from "./lib/api";
@@ -126,6 +127,7 @@ function Shell() {
   // start-up pick up anything that hasn't been fetched yet.
   const autoPreviews = usePrefs((s) => s.autoPreviews);
   useAiProgressListener();
+  useScanProgressListener();
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout> | undefined;
     const un = listen("previews-updated", () => {

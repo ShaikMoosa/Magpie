@@ -285,3 +285,46 @@ export interface BackupSummary {
   bookmarks: number;
   categories: number;
 }
+
+export type ScanProvider = "google" | "urlhaus" | "virustotal";
+export type ScanSchedule = "manual" | "on_save" | "on_save_weekly";
+export type ScanConsent = "ask" | "always" | "never";
+
+export interface SecurityConfig {
+  enabled: boolean;
+  google: boolean;
+  urlhaus: boolean;
+  virustotal: boolean;
+  schedule: ScanSchedule;
+  consent: ScanConsent;
+  stripTracking: boolean;
+  warnSuspicious: boolean;
+  blockDangerous: boolean;
+  expiryDays: number;
+}
+
+export interface ScanUsage {
+  month: string;
+  google: number;
+  urlhaus: number;
+  virustotal: number;
+  lastScanAt: string | null;
+  lastError: string | null;
+}
+
+export interface SecuritySettings {
+  config: SecurityConfig;
+  keys: ScanProvider[];
+  usage: ScanUsage;
+  running: boolean;
+}
+
+export interface ScanProgress {
+  done: number;
+  total: number;
+  dangerous: number;
+  suspicious: number;
+  failed: number;
+  finished: boolean;
+  error: string | null;
+}

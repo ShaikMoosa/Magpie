@@ -1,5 +1,8 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
+  ScanProvider,
+  SecurityConfig,
+  SecuritySettings,
   BackupConfig,
   BackupInfo,
   BackupSummary,
@@ -82,6 +85,13 @@ export const api = {
   acceptAiSuggestions: (ids: string[]) => invoke<number>("accept_ai_suggestions", { ids }),
   rejectAiSuggestions: (ids: string[]) => invoke<number>("reject_ai_suggestions", { ids }),
   categorizeBookmarks: (ids: string[] | null = null) => invoke<number>("categorize_bookmarks", { ids }),
+
+  // Security scanners
+  getSecuritySettings: () => invoke<SecuritySettings>("get_security_settings"),
+  saveSecurityConfig: (config: SecurityConfig) => invoke<SecurityConfig>("save_security_config", { config }),
+  setScanKey: (provider: ScanProvider, key: string) => invoke<void>("set_scan_key", { provider, key }),
+  removeScanKey: (provider: ScanProvider) => invoke<void>("remove_scan_key", { provider }),
+  scanBookmarks: (ids: string[] | null, confirmed: boolean) => invoke<number>("scan_bookmarks", { ids, confirmed }),
 
   // Data & Storage
   getStorageInfo: () => invoke<StorageInfo>("get_storage_info"),

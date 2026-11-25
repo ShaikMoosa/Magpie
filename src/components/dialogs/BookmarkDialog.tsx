@@ -1,5 +1,5 @@
 import { useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, Bookmark as BookmarkIcon, Check, ImageIcon, Link2, Loader2, Pencil, Sparkles, Star, Trash2 } from "lucide-react";
+import { AlertTriangle, Bookmark as BookmarkIcon, Check, ImageIcon, Link2, Loader2, Pencil, ShieldCheck, Sparkles, Star, Trash2 } from "lucide-react";
 import clsx from "clsx";
 import { useEffect, useState } from "react";
 import { useAiSettings, useCategories, useCreateBookmark, useUpdateBookmark } from "../../hooks/queries";
@@ -10,6 +10,7 @@ import type { AiSuggestion, Bookmark, Category, PageMeta, UrlCheck } from "../..
 import { toast } from "../../store/toast";
 import { usePrefs, useUi } from "../../store/ui";
 import { Favicon, Thumbnail } from "../bookmarks/visuals";
+import { useExternalScan } from "../library/ExternalScan";
 import { useBookmarkActions } from "../bookmarks/useBookmarkActions";
 import { SecurityBadge } from "../ui/Badges";
 import { Button } from "../ui/Button";
@@ -122,6 +123,7 @@ export function BookmarkDialog({ mode, bookmark, initialUrl, onClose }: { mode: 
   const update = useUpdateBookmark();
   const a = useBookmarkActions();
   const route = useUi((s) => s.route);
+  const scan = useExternalScan();
 
   const defaultCategory = route.page === "library" && route.view === "category" ? (route.categoryId ?? null) : null;
   const [url, setUrl] = useState(bookmark?.url ?? initialUrl ?? "");
@@ -393,6 +395,7 @@ export function BookmarkDialog({ mode, bookmark, initialUrl, onClose }: { mode: 
 
   return (
     <Dialog open onClose={onClose} title="Edit bookmark" subtitle={bookmark?.title} icon={<Pencil />} width={800} footer={footer}>
+      {scan.dialog}
       <div className="flex">
         <div className="min-w-0 flex-1">{form}</div>
         {bookmark && (
@@ -413,6 +416,11 @@ export function BookmarkDialog({ mode, bookmark, initialUrl, onClose }: { mode: 
                   • {r}
                 </span>
               ))}
+              {scan.available && (
+                <Button size="sm" className="mt-1 self-start" icon={<ShieldCheck />} disabled={scan.running} onClick={() => scan.start([bookmark.id])}>
+                  {scan.running ? "Scanning…" : "Check with providers"}
+                </Button>
+              )}
             </div>
             <dl className="flex flex-col gap-1.5">
               <span className="font-medium text-ink-2">Details</span>
