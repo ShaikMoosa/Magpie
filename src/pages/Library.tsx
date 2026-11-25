@@ -14,6 +14,7 @@ import {
   Plus,
   Rows3,
   Search,
+  Sparkles,
   ShieldAlert,
   ShieldCheck,
   Star,
@@ -26,10 +27,11 @@ import { BookmarkCard, BookmarkCompact, BookmarkRow } from "../components/bookma
 import { useBookmarkActions } from "../components/bookmarks/useBookmarkActions";
 import { TopBar } from "../components/layout/TopBar";
 import { activeFilterCount, FilterBar, NO_FILTERS, type FilterState } from "../components/library/Filters";
+import { AiReviewPanel } from "../components/library/AiReview";
 import { SecurityAlertList, SecurityHeaderAction, SecuritySummary, TrustedSites } from "../components/library/SecurityAlerts";
 import { Button } from "../components/ui/Button";
 import { EmptyState } from "../components/ui/EmptyState";
-import { useBookmarks, useCategories, useCounts } from "../hooks/queries";
+import { useAiSettings, useBookmarks, useCategories, useCategorize, useCounts } from "../hooks/queries";
 import { tint } from "../lib/colors";
 import { plural } from "../lib/format";
 import type { Bookmark, Category, LibraryView, Sort, ViewMode } from "../lib/types";
@@ -161,6 +163,8 @@ function MoveMenu({ ids, categories }: { ids: string[]; categories: Category[] }
 function BulkBar({ ids, inTrash, categories }: { ids: string[]; inTrash: boolean; categories: Category[] }) {
   const a = useBookmarkActions();
   const clear = useUi((s) => s.clearSelection);
+  const aiOn = !!useAiSettings().data?.config.enabled;
+  const categorize = useCategorize();
   const btn = "inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-[13px] font-medium text-ink-2 hover:bg-canvas [&_svg]:size-4";
   return (
     <div className="flex h-11 items-center gap-1 rounded-xl bg-muted pr-2 pl-3.5">
@@ -177,6 +181,11 @@ function BulkBar({ ids, inTrash, categories }: { ids: string[]; inTrash: boolean
       ) : (
         <>
           <MoveMenu ids={ids} categories={categories} />
+          {aiOn && (
+            <button className={btn} onClick={() => categorize.mutate(ids)} disabled={categorize.isPending}>
+              <Sparkles /> Organise with AI
+            </button>
+          )}
           <button className={btn} onClick={() => a.setFavourite(ids, true)}>
             <Star /> Favourite
           </button>
@@ -338,6 +347,7 @@ export function Library({ view, categoryId, searchRef }: { view: LibraryView; ca
         )}
 
         {view === "security" && <SecuritySummary />}
+        {view === "uncategorized" && (items.length > 0 || isLoading) && <AiReviewPanel />}
 
         {view === "trash" && items.length > 0 && (
           <div className="flex items-center gap-2.5 rounded-xl border border-amber-200 bg-warning-bg px-3.5 py-3 text-[13px]">

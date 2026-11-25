@@ -1,11 +1,12 @@
-import { AlertTriangle, Bookmark as BookmarkIcon, Check, ImageIcon, Link2, Loader2, Pencil, Star, Trash2 } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
+import { AlertTriangle, Bookmark as BookmarkIcon, Check, ImageIcon, Link2, Loader2, Pencil, Sparkles, Star, Trash2 } from "lucide-react";
 import clsx from "clsx";
 import { useEffect, useState } from "react";
-import { useCategories, useCreateBookmark, useUpdateBookmark } from "../../hooks/queries";
+import { useAiSettings, useCategories, useCreateBookmark, useUpdateBookmark } from "../../hooks/queries";
 import { api, errorMessage, isAppError } from "../../lib/api";
-import { UNCATEGORIZED_COLOR } from "../../lib/colors";
+import { CATEGORY_PALETTE, UNCATEGORIZED_COLOR } from "../../lib/colors";
 import { formatDate, formatRelative } from "../../lib/format";
-import type { Bookmark, PageMeta, UrlCheck } from "../../lib/types";
+import type { AiSuggestion, Bookmark, Category, PageMeta, UrlCheck } from "../../lib/types";
 import { toast } from "../../store/toast";
 import { usePrefs, useUi } from "../../store/ui";
 import { Favicon, Thumbnail } from "../bookmarks/visuals";
@@ -42,6 +43,72 @@ function useUrlCheck(url: string, excludeId?: string) {
   return { check, error };
 }
 
+/** AI category suggestion for a bookmark that isn't saved yet. */
+function useDraftSuggestion(enabled: boolean, url: string | null, title: string, description: string) {
+  const [state, setState] = useState<{ s: AiSuggestion | null; loading: boolean; error: string | null }>({ s: null, loading: false, error: null });
+  useEffect(() => {
+    if (!enabled || !url) {
+      setState({ s: null, loading: false, error: null });
+      return;
+    }
+    let live = true;
+    setState((x) => ({ ...x, loading: true, error: null }));
+    const t = setTimeout(() => {
+      api
+        .suggestCategory({ url, title: title || null, description: description || null })
+        .then((s) => live && setState({ s, loading: false, error: null }))
+        .catch((e) => live && setState({ s: null, loading: false, error: errorMessage(e) }));
+    }, 500);
+    return () => {
+      live = false;
+      clearTimeout(t);
+    };
+    // Re-ask only when the page changes, not on every keystroke.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [enabled, url]);
+  return state;
+}
+
+function SuggestionBox({ s, loading, error, categories, current, onUse }: { s: AiSuggestion | null; loading: boolean; error: string | null; categories: Category[]; current: string | null; onUse: (s: AiSuggestion) => void }) {
+  if (!loading && !s && !error) return null;
+  const cat = s?.categoryId ? categories.find((c) => c.id === s.categoryId) : null;
+  const parent = cat?.parentId ? categories.find((c) => c.id === cat.parentId) : null;
+  const label = cat ? (parent ? `${parent.name} › ${cat.name}` : cat.name) : s?.newCategory ? `New category “${s.newCategory}”` : null;
+  const applied = !!cat && current === cat.id;
+  return (
+    <div className="flex items-center gap-3 rounded-xl border border-brand-200 bg-brand-50 px-3.5 py-2.5">
+      <span className="grid size-7 shrink-0 place-items-center rounded-lg bg-brand-600 text-white">
+        {loading ? <Loader2 className="size-3.5 animate-spin" /> : <Sparkles className="size-3.5" />}
+      </span>
+      <div className="min-w-0 flex-1 text-[13px]">
+        {loading ? (
+          <span className="text-ink-2">AI is suggesting a category…</span>
+        ) : error ? (
+          <span className="text-ink-2">AI suggestion unavailable: {error}</span>
+        ) : label && s ? (
+          <>
+            <p>
+              <span className="text-ink-2">Suggested: </span>
+              <span className="font-medium" style={cat ? { color: cat.color } : undefined}>
+                {label}
+              </span>
+              <span className="ml-1.5 rounded-md bg-brand-100 px-1.5 text-xs font-medium text-brand-700">{Math.round(s.confidence * 100)}%</span>
+            </p>
+            {s.reason && <p className="truncate text-xs text-ink-3">{s.reason}</p>}
+          </>
+        ) : (
+          <span className="text-ink-2">AI didn&apos;t find a confident match. Pick a category yourself.</span>
+        )}
+      </div>
+      {s && label && (
+        <Button size="sm" variant={applied ? "ghost" : "secondary"} icon={<Check />} disabled={applied} onClick={() => onUse(s)}>
+          {applied ? "Applied" : s.newCategory ? "Create & use" : "Use"}
+        </Button>
+      )}
+    </div>
+  );
+}
+
 function parseTags(s: string): string[] {
   return s
     .split(/[,\s]+/)
@@ -71,6 +138,10 @@ export function BookmarkDialog({ mode, bookmark, initialUrl, onClose }: { mode: 
   const [metaState, setMetaState] = useState<"idle" | "loading" | "done" | "failed">("idle");
   const [metaError, setMetaError] = useState<string | null>(null);
   const [touched, setTouched] = useState({ title: false, description: false });
+  const qc = useQueryClient();
+  const { data: ai } = useAiSettings();
+  const aiOn = mode === "add" && !!ai?.config.enabled && ai.config.mode !== "manual";
+  const [pickedCategory, setPickedCategory] = useState(categoryId !== null);
 
   // Fetch the page preview for new bookmarks (the Rust side refuses private addresses).
   const previewUrl = mode === "add" && autoPreviews && check && check.securityStatus !== "dangerous" ? check.url : null;
@@ -107,6 +178,34 @@ export function BookmarkDialog({ mode, bookmark, initialUrl, onClose }: { mode: 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [meta]);
 
+  const aiUrl = aiOn && check && metaState !== "loading" && check.securityStatus !== "dangerous" ? check.url : null;
+  const suggestion = useDraftSuggestion(aiOn, aiUrl, title, description);
+  const applySuggestion = async (s: AiSuggestion) => {
+    if (s.categoryId) setCategoryId(s.categoryId);
+    else if (s.newCategory) {
+      try {
+        const c = await api.createCategory({ name: s.newCategory, description: null, color: CATEGORY_PALETTE[categories.length % CATEGORY_PALETTE.length], icon: null, parentId: null });
+        await qc.invalidateQueries({ queryKey: ["categories"] });
+        setCategoryId(c.id);
+      } catch (e) {
+        toast({ type: "error", title: "Couldn't create the category", body: errorMessage(e) });
+        return;
+      }
+    }
+    if (s.tags.length) {
+      const have = new Set(parseTags(tags));
+      const add = s.tags.filter((t) => !have.has(t));
+      if (add.length) setTags((v) => [v.trim(), ...add.map((t) => `#${t}`)].filter(Boolean).join(" "));
+    }
+    setPickedCategory(true);
+  };
+  // Automatic mode files into existing categories unless the user already chose one.
+  const autoMode = ai?.config.mode === "automatic";
+  useEffect(() => {
+    const id = suggestion.s?.categoryId;
+    if (autoMode && id && !pickedCategory) setCategoryId(id);
+  }, [suggestion.s, autoMode, pickedCategory]);
+
   const duplicate = check?.duplicateOf && check.duplicateOf !== bookmark?.id;
   const busy = create.isPending || update.isPending;
   const canSave = !!check && !error && (!duplicate || allowDuplicate || mode === "edit") && !busy;
@@ -128,6 +227,8 @@ export function BookmarkDialog({ mode, bookmark, initialUrl, onClose }: { mode: 
           favicon: meta?.favicon ?? null,
         });
         if (!meta && autoPreviews) void api.refreshMetadata([b.id]).catch(() => undefined);
+        // Saved without a category and without a suggestion here: let the background run look at it.
+        if (!categoryId && aiOn && ai?.config.autoCategoriseNew && !suggestion.s) void api.categorizeBookmarks([b.id]).catch(() => undefined);
         toast({ type: "success", title: "Bookmark saved", body: `${b.title} added to ${category?.name ?? "Uncategorized"}` });
       } else if (bookmark) {
         await update.mutateAsync({ id: bookmark.id, url, title, description: description || null, categoryId, isFavourite, tags: parseTags(tags) });
@@ -217,6 +318,8 @@ export function BookmarkDialog({ mode, bookmark, initialUrl, onClose }: { mode: 
         </div>
       )}
 
+      {aiOn && check && <SuggestionBox {...suggestion} categories={categories} current={categoryId} onUse={(s) => void applySuggestion(s)} />}
+
       <div className="grid grid-cols-2 gap-3.5">
         <Field label="Title">
           <TextInput value={title} onChange={(e) => {
@@ -225,7 +328,14 @@ export function BookmarkDialog({ mode, bookmark, initialUrl, onClose }: { mode: 
             }} placeholder={check?.domain ?? "Uses the domain if empty"} maxLength={300} />
         </Field>
         <Field label="Category">
-          <CategorySelect categories={categories} value={categoryId} onChange={setCategoryId} />
+          <CategorySelect
+            categories={categories}
+            value={categoryId}
+            onChange={(v) => {
+              setCategoryId(v);
+              setPickedCategory(true);
+            }}
+          />
         </Field>
       </div>
       <Field label="Description">

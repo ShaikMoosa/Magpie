@@ -1,5 +1,10 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
+  AiConfig,
+  AiProvider,
+  AiSettings,
+  AiSuggestion,
+  StoredSuggestion,
   AppError,
   BrowserProfile,
   ImportOptions,
@@ -61,6 +66,17 @@ export const api = {
   markSafe: (ids: string[]) => invoke<number>("mark_safe", { ids }),
   listOverrides: () => invoke<SecurityOverride[]>("list_overrides"),
   removeOverride: (domain: string) => invoke<void>("remove_override", { domain }),
+
+  getAiSettings: () => invoke<AiSettings>("get_ai_settings"),
+  saveAiConfig: (config: AiConfig) => invoke<AiConfig>("save_ai_config", { config }),
+  setAiKey: (provider: AiProvider, key: string) => invoke<void>("set_ai_key", { provider, key }),
+  removeAiKey: (provider: AiProvider) => invoke<void>("remove_ai_key", { provider }),
+  listAiModels: (config: AiConfig) => invoke<string[]>("list_ai_models", { config }),
+  suggestCategory: (draft: { url: string; title?: string | null; description?: string | null }) => invoke<AiSuggestion>("suggest_category", { draft }),
+  listAiSuggestions: () => invoke<StoredSuggestion[]>("list_ai_suggestions"),
+  acceptAiSuggestions: (ids: string[]) => invoke<number>("accept_ai_suggestions", { ids }),
+  rejectAiSuggestions: (ids: string[]) => invoke<number>("reject_ai_suggestions", { ids }),
+  categorizeBookmarks: (ids: string[] | null = null) => invoke<number>("categorize_bookmarks", { ids }),
 
   previewsDir: () => invoke<string>("previews_dir"),
   fetchMetadata: (url: string) => invoke<PageMeta>("fetch_metadata", { url }),

@@ -1,3 +1,4 @@
+mod ai_commands;
 mod commands;
 
 use std::sync::Mutex;
@@ -22,6 +23,7 @@ pub fn run() {
                 db_path,
                 previews,
                 preview_worker: std::sync::atomic::AtomicBool::new(false),
+                ai_worker: std::sync::atomic::AtomicBool::new(false),
             });
             Ok(())
         })
@@ -54,6 +56,16 @@ pub fn run() {
             commands::mark_safe,
             commands::list_overrides,
             commands::remove_override,
+            ai_commands::get_ai_settings,
+            ai_commands::save_ai_config,
+            ai_commands::set_ai_key,
+            ai_commands::remove_ai_key,
+            ai_commands::list_ai_models,
+            ai_commands::suggest_category,
+            ai_commands::list_ai_suggestions,
+            ai_commands::accept_ai_suggestions,
+            ai_commands::reject_ai_suggestions,
+            ai_commands::categorize_bookmarks,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

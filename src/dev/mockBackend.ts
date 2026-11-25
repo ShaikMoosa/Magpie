@@ -3,7 +3,7 @@
 // and implements just enough of each command to review the UI.
 
 import { mockIPC, mockWindows } from "@tauri-apps/api/mocks";
-import type { Bookmark, BookmarkQuery, Category, CategoryInput, NewBookmark, UpdateBookmark } from "../lib/types";
+import type { AiConfig, AiSuggestion, Bookmark, BookmarkQuery, Category, CategoryInput, NewBookmark, UpdateBookmark } from "../lib/types";
 
 const now = Date.now();
 const iso = (hoursAgo: number) => new Date(now - hoursAgo * 3_600_000).toISOString();
@@ -45,6 +45,33 @@ add("https://lucide.dev", "Lucide Icons", "Beautiful & consistent icon toolkit m
 add("https://www.nngroup.com/articles/", "Nielsen Norman — UX research methods", null, research.id, 80);
 add("https://paulgraham.com/greatwork.html", "How to Do Great Work", null, reading.id, 120);
 add("https://excalidraw.com", "Excalidraw — Virtual whiteboard", null, null, 3);
+
+add("https://www.awwwards.com/websites/", "Awwwards — Website inspiration", "The best web design and development inspiration.", null, 6);
+add("https://docs.rs/serde", "serde — Rust docs", "A generic serialization/deserialization framework.", null, 7);
+add("https://arxiv.org/abs/2401.00001", "A survey of retrieval methods", null, null, 26);
+
+// --- AI (mock) ---
+let aiConfig: AiConfig = {
+  enabled: false, provider: "anthropic", model: "claude-opus-5-5", endpoint: "", mode: "suggestion",
+  allowNewCategories: false, neverOverwriteManual: true, autoCategoriseNew: true, excludedCategoryIds: [],
+};
+const aiKeys = new Set<string>();
+const aiUsage = { requests: 0, suggestions: 0, accepted: 0, errors: 0, lastUsedAt: null as string | null, lastError: null as string | null };
+const pending = new Map<string, AiSuggestion & { createdAt: string }>();
+const rejected = new Set<string>();
+function guess(url: string, title: string): AiSuggestion {
+  const t = `${url} ${title}`.toLowerCase();
+  const pick = (name: string) => cats.find((c) => c.name === name)!.id;
+  const [categoryId, tags, reason] =
+    /figma|dribbble|awwwards|design|ui/.test(t) ? [pick("Design"), ["inspiration"], "Design inspiration gallery"]
+    : /docs|github|rust|react|api|dev/.test(t) ? [pick("Development"), ["docs"], "Developer documentation"]
+    : /arxiv|research|study|survey/.test(t) ? [pick("Research"), ["paper"], "Academic paper"]
+    : /draw|notion|todo|whiteboard/.test(t) ? [pick("Productivity"), ["tools"], "Productivity tool"]
+    : [null, [], "Nothing fits well"];
+  aiUsage.requests++;
+  aiUsage.lastUsedAt = new Date().toISOString();
+  return { categoryId: categoryId as string | null, newCategory: null, tags: tags as string[], confidence: categoryId ? 0.86 : 0.3, reason: reason as string, provider: aiConfig.provider, model: aiConfig.model };
+}
 
 function counts() {
   const live = marks.filter((b) => !b.deletedAt);
@@ -129,7 +156,7 @@ export function installMockBackend() {
     localStorage.removeItem("magpie.prefs");
   }
   mockWindows("main");
-  mockIPC((cmd, payload) => {
+  mockIPC(async (cmd, payload) => {
     const a = (payload ?? {}) as Record<string, any>;
     switch (cmd) {
       case "list_bookmarks": return list(a.query);
@@ -170,6 +197,52 @@ export function installMockBackend() {
         window.open(b.url, "_blank", "noopener");
         return { opened: true, bookmark: b };
       }
+      case "get_ai_settings": return { config: aiConfig, keys: [...aiKeys], usage: aiUsage, running: false };
+      case "save_ai_config": aiConfig = a.config; return aiConfig;
+      case "set_ai_key": aiKeys.add(a.provider); return null;
+      case "remove_ai_key": aiKeys.delete(a.provider); return null;
+      case "list_ai_models":
+        if (!aiKeys.has(a.config.provider)) throw { code: "VALIDATION", message: "Add your API key in Settings › AI." };
+        return a.config.provider === "anthropic" ? ["claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"] : ["model-large", "model-small"];
+      case "suggest_category": {
+        await new Promise((r) => setTimeout(r, 700));
+        return guess(a.draft.url, a.draft.title ?? "");
+      }
+      case "categorize_bookmarks": {
+        const targets = marks.filter((b) => !b.deletedAt && (a.ids ? a.ids.includes(b.id) : !b.categoryId && !pending.has(b.id) && !rejected.has(b.id)));
+        for (const b of targets) {
+          const g = guess(b.url, b.title);
+          if (aiConfig.mode === "automatic" && g.categoryId && !b.categoryId) b.categoryId = g.categoryId;
+          else pending.set(b.id, { ...g, createdAt: new Date().toISOString() });
+          if (g.categoryId) aiUsage.suggestions++;
+        }
+        return targets.length;
+      }
+      case "list_ai_suggestions":
+        return [...pending.entries()].flatMap(([bid, s]) => {
+          const bookmark = marks.find((b) => b.id === bid && !b.deletedAt && !b.categoryId);
+          return bookmark ? [{ ...s, bookmark }] : [];
+        });
+      case "accept_ai_suggestions": {
+        let n = 0;
+        for (const bid of a.ids as string[]) {
+          const s = pending.get(bid);
+          const b = marks.find((x) => x.id === bid);
+          if (!s || !b || !s.categoryId) continue;
+          b.categoryId = s.categoryId;
+          b.tags = [...new Set([...b.tags, ...s.tags])];
+          pending.delete(bid);
+          aiUsage.accepted++;
+          n++;
+        }
+        return n;
+      }
+      case "reject_ai_suggestions":
+        for (const bid of a.ids as string[]) {
+          pending.delete(bid);
+          rejected.add(bid);
+        }
+        return a.ids.length;
       case "list_categories": return withCounts();
       case "create_category": {
         const i = a.input as CategoryInput;
