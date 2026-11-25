@@ -94,6 +94,15 @@ pub fn check_url(conn: &Connection, input: &str, exclude: Option<&str>) -> Resul
 }
 
 pub fn create(conn: &Connection, input: NewBookmark) -> Result<Bookmark> {
+    let tx = conn.unchecked_transaction()?;
+    let id = insert(&tx, input, None)?;
+    tx.commit()?;
+    get(conn, &id)
+}
+
+/// Insert without opening a transaction (callers own it). `created_at`
+/// overrides the timestamp, e.g. to keep a browser's original "date added".
+pub(crate) fn insert(conn: &Connection, input: NewBookmark, created_at: Option<&str>) -> Result<String> {
     let parsed = urls::parse(&input.url)?;
     if !input.allow_duplicate
         && let Some(existing_id) = find_duplicate(conn, &parsed.normalized, None)?
@@ -103,11 +112,12 @@ pub fn create(conn: &Connection, input: NewBookmark) -> Result<Bookmark> {
     ensure_category(conn, &input.category_id)?;
     let assessment = security::assess(&parsed.url);
     let id = new_id();
-    let ts = now();
+    let checked = now();
+    let ts = created_at.map(str::to_string).unwrap_or_else(|| checked.clone());
     let title = clean(input.title).unwrap_or_else(|| parsed.domain.clone());
     let reasons: String = assessment.reasons.join(&REASON_SEP.to_string());
 
-    let tx = conn.unchecked_transaction()?;
+    let tx = conn;
     tx.execute(
         "INSERT INTO bookmarks (id, url, normalized_url, title, description, domain, category_id,
             is_favourite, source_browser, source_folder, security_status, security_reasons, security_source,
@@ -127,14 +137,13 @@ pub fn create(conn: &Connection, input: NewBookmark) -> Result<Bookmark> {
             assessment.status.as_str(),
             reasons,
             security::LOCAL_SOURCE,
-            ts,
+            checked,
             ts,
         ],
     )?;
-    set_tags(&tx, &id, &input.tags)?;
-    reindex(&tx, &id)?;
-    tx.commit()?;
-    get(conn, &id)
+    set_tags(tx, &id, &input.tags)?;
+    reindex(tx, &id)?;
+    Ok(id)
 }
 
 pub fn update(conn: &Connection, input: UpdateBookmark) -> Result<Bookmark> {

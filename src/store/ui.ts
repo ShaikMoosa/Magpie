@@ -14,6 +14,7 @@ export type DialogState =
   | { kind: "open-warning"; bookmark: Bookmark }
   | { kind: "confirm-delete"; ids: string[] }
   | { kind: "empty-trash" }
+  | { kind: "import"; source?: "chrome" | "edge" | "html" }
   | null;
 
 interface UiState {
@@ -67,6 +68,9 @@ interface Prefs {
   viewMode: ViewMode;
   defaultSort: Sort;
   confirmDelete: boolean;
+  /** First-run welcome screen was dismissed or an import finished. */
+  welcomeDone: boolean;
+  setWelcomeDone: (v: boolean) => void;
   setViewMode: (v: ViewMode) => void;
   setDefaultSort: (s: Sort) => void;
   setConfirmDelete: (v: boolean) => void;
@@ -79,6 +83,8 @@ export const usePrefs = create<Prefs>()(
       viewMode: "card",
       defaultSort: "recently_added",
       confirmDelete: true,
+      welcomeDone: false,
+      setWelcomeDone: (welcomeDone) => set({ welcomeDone }),
       setViewMode: (viewMode) => set({ viewMode }),
       setDefaultSort: (defaultSort) => set({ defaultSort }),
       setConfirmDelete: (confirmDelete) => set({ confirmDelete }),

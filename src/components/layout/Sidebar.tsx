@@ -176,7 +176,7 @@ export function Sidebar({ onSearchFocus }: { onSearchFocus: () => void }) {
       </div>
 
       <div className="my-1 h-px bg-line" />
-      <NavItem icon={<Download />} label="Import Bookmarks" soon onClick={() => navigate({ page: "settings", section: "general" })} />
+      <NavItem icon={<Download />} label="Import Bookmarks" onClick={() => openDialog({ kind: "import" })} />
       <NavItem icon={<Trash2 />} label="Trash" count={counts?.trash || undefined} active={isActive(route, "trash")} onClick={go("trash")} />
       <NavItem icon={<Settings />} label="Settings" active={route.page === "settings"} onClick={() => navigate({ page: "settings", section: "general" })} />
     </aside>

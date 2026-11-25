@@ -429,7 +429,7 @@ function EmptyForView({ view, searching, title, onAdd }: { view: LibraryView; se
           icon={<LayoutGrid />}
           tone="brand"
           title="Your library is empty"
-          body="Paste your first link to get started. Browser import arrives in the next update."
+          body="Paste your first link, or bring in your bookmarks from Chrome, Edge or an HTML file."
           actions={<Button variant="primary" icon={<Plus />} onClick={onAdd}>Add a link</Button>}
         />
       );

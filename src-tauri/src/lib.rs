@@ -9,6 +9,7 @@ use tauri::Manager;
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let dir = app.path().app_data_dir()?;
             std::fs::create_dir_all(&dir)?;
@@ -35,6 +36,9 @@ pub fn run() {
             commands::update_category,
             commands::delete_category,
             commands::reorder_categories,
+            commands::detect_browsers,
+            commands::preview_import,
+            commands::start_import,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

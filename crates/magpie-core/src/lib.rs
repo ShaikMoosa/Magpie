@@ -6,6 +6,7 @@ pub mod bookmarks;
 pub mod categories;
 pub mod db;
 pub mod error;
+pub mod import;
 pub mod models;
 pub mod security;
 pub mod urls;
