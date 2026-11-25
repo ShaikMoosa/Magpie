@@ -1,7 +1,24 @@
 import clsx from "clsx";
+import { useState } from "react";
+import { previewSrc } from "../../lib/previews";
 import { darken, domainColor, domainLetter, lighten } from "../../lib/colors";
 
-export function Favicon({ domain, size = 20, className }: { domain: string; size?: number; className?: string }) {
+export function Favicon({ domain, size = 20, className, file }: { domain: string; size?: number; className?: string; file?: string | null }) {
+  const src = previewSrc(file);
+  const [broken, setBroken] = useState(false);
+  if (src && !broken) {
+    return (
+      <img
+        src={src}
+        alt=""
+        aria-hidden
+        draggable={false}
+        onError={() => setBroken(true)}
+        className={clsx("shrink-0 rounded-[5px] bg-canvas object-contain", className)}
+        style={{ width: size, height: size }}
+      />
+    );
+  }
   return (
     <span
       aria-hidden
@@ -14,7 +31,16 @@ export function Favicon({ domain, size = 20, className }: { domain: string; size
 }
 
 /** Domain-based placeholder preview (until real Open Graph images arrive). */
-export function Thumbnail({ color, className }: { color: string; className?: string }) {
+export function Thumbnail({ color, className, file }: { color: string; className?: string; file?: string | null }) {
+  const src = previewSrc(file);
+  const [broken, setBroken] = useState(false);
+  if (src && !broken) {
+    return (
+      <div className={clsx("relative shrink-0 overflow-hidden rounded-[10px] border border-line bg-muted", className)}>
+        <img src={src} alt="" aria-hidden draggable={false} onError={() => setBroken(true)} className="size-full object-cover" />
+      </div>
+    );
+  }
   return (
     <div
       aria-hidden

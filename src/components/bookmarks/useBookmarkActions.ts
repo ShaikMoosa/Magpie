@@ -1,5 +1,6 @@
 import { useMoveBookmarks, useOpenBookmark, usePurge, useRestore, useSetFavourite, useTrash } from "../../hooks/queries";
 import type { Bookmark } from "../../lib/types";
+import { api, errorMessage } from "../../lib/api";
 import { toast } from "../../store/toast";
 import { usePrefs, useUi } from "../../store/ui";
 
@@ -44,6 +45,11 @@ export function useBookmarkActions() {
     trashNow: (ids: string[]) => trashM.mutate(ids),
     restore: (ids: string[]) =>
       restoreM.mutate(ids, { onSuccess: (n) => toast({ type: "success", title: n === 1 ? "Bookmark restored" : `Restored ${n} bookmarks` }) }),
+    refreshPreview: (ids: string[]) =>
+      api
+        .refreshMetadata(ids)
+        .then(() => toast({ type: "info", title: ids.length === 1 ? "Refreshing preview…" : `Refreshing ${ids.length} previews…` }))
+        .catch((e) => toast({ type: "error", title: "Couldn't refresh the preview", body: errorMessage(e) })),
     purge: (ids: string[]) =>
       purgeM.mutate(ids, { onSuccess: (n) => toast({ type: "success", title: n === 1 ? "Deleted permanently" : `Deleted ${n} bookmarks permanently` }) }),
   };

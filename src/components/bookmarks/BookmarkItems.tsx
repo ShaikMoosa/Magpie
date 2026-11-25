@@ -137,7 +137,7 @@ export function BookmarkCard({ bookmark, category, selected }: ItemProps) {
         )}
       >
         <div className="relative">
-          <Thumbnail color={category?.color ?? UNCATEGORIZED_COLOR} className="h-28 w-[156px]" />
+          <Thumbnail color={category?.color ?? UNCATEGORIZED_COLOR} file={bookmark.thumbnailPath} className="h-28 w-[156px]" />
           <Checkbox
             checked={selected}
             onToggle={() => toggleSelect(bookmark.id, true)}
@@ -146,7 +146,7 @@ export function BookmarkCard({ bookmark, category, selected }: ItemProps) {
         </div>
         <div className="flex min-w-0 flex-1 flex-col gap-1.5">
           <div className="flex items-center gap-2">
-            <Favicon domain={bookmark.domain} size={18} />
+            <Favicon domain={bookmark.domain} file={bookmark.faviconPath} size={18} />
             <h3 className="min-w-0 flex-1 truncate text-[15px] font-semibold tracking-tight">{bookmark.title}</h3>
             <StarButton bookmark={bookmark} />
             <MoreButton bookmark={bookmark} />
@@ -195,7 +195,7 @@ export function BookmarkRow({ bookmark, category, selected }: ItemProps) {
         )}
       >
         <Checkbox checked={selected} onToggle={() => toggleSelect(bookmark.id, true)} />
-        <Favicon domain={bookmark.domain} />
+        <Favicon domain={bookmark.domain} file={bookmark.faviconPath} />
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-medium">{bookmark.title}</p>
           <p className="truncate text-xs text-ink-3">{bookmark.domain}</p>
@@ -235,7 +235,7 @@ export function BookmarkCompact({ bookmark, category, selected }: ItemProps) {
           selected ? "border-brand-500 bg-brand-50 ring-1 ring-brand-500" : "border-line bg-canvas hover:border-line-strong",
         )}
       >
-        <Favicon domain={bookmark.domain} />
+        <Favicon domain={bookmark.domain} file={bookmark.faviconPath} />
         <div className="min-w-0 flex-1 leading-tight">
           <p className="truncate text-[13px] font-medium">{bookmark.title}</p>
           <p className="truncate text-xs text-ink-3">{bookmark.domain}</p>

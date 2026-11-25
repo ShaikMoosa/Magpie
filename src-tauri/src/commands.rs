@@ -1,6 +1,8 @@
 //! Tauri IPC commands. Thin wrappers over `magpie_core`; all validation
 //! happens in Rust and the frontend never supplies security status.
 
+use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, MutexGuard};
 
 use magpie_core::models::{
@@ -8,14 +10,19 @@ use magpie_core::models::{
     UpdateBookmark, UpdateCategory, UrlCheck,
 };
 use magpie_core::import::{BrowserProfile, ImportOptions, ImportPreview, ImportSource, ImportSummary};
+use magpie_core::metadata::{Fetcher, PageMeta};
 use magpie_core::{Error, bookmarks, categories, import};
 use magpie_core::rusqlite::Connection;
 use serde::Serialize;
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_opener::OpenerExt;
 
 pub struct AppState {
     pub db: Mutex<Connection>,
+    pub db_path: PathBuf,
+    /// Cached preview images and favicons.
+    pub previews: PathBuf,
+    pub preview_worker: AtomicBool,
 }
 
 impl AppState {
@@ -177,4 +184,82 @@ pub async fn start_import(
 ) -> CmdResult<ImportSummary> {
     let (label, browser, items) = import::read_source(&source, &local_app_data(&app)?)?;
     import::import(&state.db(), &label, &browser, &items, &options)
+}
+
+// ---------- Link previews ----------
+
+/// Folder holding cached preview images (served to the UI via the asset protocol).
+#[tauri::command]
+pub async fn previews_dir(state: State<'_, AppState>) -> CmdResult<String> {
+    Ok(state.previews.to_string_lossy().to_string())
+}
+
+/// Fetch a page's preview for the Add Bookmark dialog. Nothing is saved
+/// except cached images.
+#[tauri::command]
+pub async fn fetch_metadata(state: State<'_, AppState>, url: String) -> CmdResult<PageMeta> {
+    let dir = state.previews.clone();
+    tauri::async_runtime::spawn_blocking(move || Fetcher::new(dir).fetch(&url))
+        .await
+        .map_err(|_| Error::Network("The preview request stopped unexpectedly.".into()))?
+}
+
+/// Queue bookmarks for a fresh preview (all pending ones when `ids` is None)
+/// and make sure the background worker is running.
+#[tauri::command]
+pub async fn refresh_metadata(app: AppHandle, state: State<'_, AppState>, ids: Option<Vec<String>>) -> CmdResult<()> {
+    if let Some(ids) = ids {
+        bookmarks::reset_metadata(&state.db(), &ids)?;
+    }
+    start_preview_worker(&app, &state);
+    Ok(())
+}
+
+const PREVIEW_BATCH: u32 = 8;
+
+fn start_preview_worker(app: &AppHandle, state: &AppState) {
+    if state.preview_worker.swap(true, Ordering::SeqCst) {
+        return; // already running; it keeps going until nothing is pending
+    }
+    let app = app.clone();
+    let db_path = state.db_path.clone();
+    let dir = state.previews.clone();
+    std::thread::spawn(move || {
+        loop {
+            let _ = run_preview_batches(&app, &db_path, &dir);
+            let state = app.state::<AppState>();
+            state.preview_worker.store(false, Ordering::SeqCst);
+            // Re-check for work queued while we were finishing.
+            let more = bookmarks::pending_metadata(&state.db(), 1).map(|v| !v.is_empty()).unwrap_or(false);
+            if !more || state.preview_worker.swap(true, Ordering::SeqCst) {
+                break;
+            }
+        }
+    });
+}
+
+fn run_preview_batches(app: &AppHandle, db_path: &std::path::Path, dir: &std::path::Path) -> Result<(), Error> {
+    // Own connection so the UI's connection is never blocked by network I/O.
+    let conn = magpie_core::db::open(db_path)?;
+    let fetcher = Fetcher::new(dir);
+    loop {
+        let batch = bookmarks::pending_metadata(&conn, PREVIEW_BATCH)?;
+        if batch.is_empty() {
+            return Ok(());
+        }
+        let results: Vec<(String, Result<PageMeta, Error>)> = std::thread::scope(|s| {
+            let handles: Vec<_> = batch.iter().map(|(id, url)| (id.clone(), s.spawn(|| fetcher.fetch(url)))).collect();
+            handles
+                .into_iter()
+                .map(|(id, h)| (id, h.join().unwrap_or_else(|_| Err(Error::Network("Preview fetch failed.".into())))))
+                .collect()
+        });
+        for (id, result) in results {
+            match result {
+                Ok(meta) => bookmarks::apply_metadata(&conn, &id, &meta)?,
+                Err(_) => bookmarks::mark_metadata_failed(&conn, &id)?,
+            }
+        }
+        let _ = app.emit("previews-updated", batch.len());
+    }
 }

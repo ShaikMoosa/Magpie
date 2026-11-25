@@ -1,4 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { listen } from "@tauri-apps/api/event";
+import { api } from "./lib/api";
 import { PanelLeft } from "lucide-react";
 import { useEffect, useRef } from "react";
 import { useBookmarkActions } from "./components/bookmarks/useBookmarkActions";
@@ -118,6 +120,24 @@ function Shell() {
 
   const routeKey = JSON.stringify(route);
   useEffect(() => setSort(defaultSort), [routeKey, defaultSort, setSort]);
+
+  // Previews arrive in the background: refresh lists as they land, and on
+  // start-up pick up anything that hasn't been fetched yet.
+  const autoPreviews = usePrefs((s) => s.autoPreviews);
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const un = listen("previews-updated", () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => void queryClient.invalidateQueries({ queryKey: ["bookmarks"] }), 400);
+    }).catch(() => () => undefined);
+    return () => {
+      clearTimeout(timer);
+      void un.then((f) => f());
+    };
+  }, []);
+  useEffect(() => {
+    if (autoPreviews) void api.refreshMetadata(null).catch(() => undefined);
+  }, [autoPreviews]);
 
   // Block the WebView's own context menu outside our custom menus.
   useEffect(() => {

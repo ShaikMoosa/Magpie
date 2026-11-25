@@ -4,6 +4,8 @@ import type { ReactNode } from "react";
 import logo from "../assets/logo.png";
 import { TopBar } from "../components/layout/TopBar";
 import { Kbd, Toggle } from "../components/ui/Field";
+import { api, errorMessage } from "../lib/api";
+import { toast } from "../store/toast";
 import type { Sort, ViewMode } from "../lib/types";
 import { usePrefs, useUi, type SettingsSection } from "../store/ui";
 
@@ -90,7 +92,25 @@ function General() {
           <Toggle checked={p.confirmDelete} onChange={p.setConfirmDelete} label="Confirm before deleting" />
         </Row>
       </Card>
-      <p className="text-xs text-ink-3">More options — start with Windows, tray, preview refresh and cache limits — arrive with Data & Storage.</p>
+      <Card title="Link previews">
+        <Row label="Fetch link previews automatically" hint="Downloads each page's title, description, icon and preview image. Local and private network addresses are never fetched.">
+          <Toggle checked={p.autoPreviews} onChange={p.setAutoPreviews} label="Fetch link previews automatically" />
+        </Row>
+        <Row label="Fetch missing previews now" hint="Runs in the background for bookmarks without a preview">
+          <button
+            className="h-9 rounded-[9px] border border-line-strong px-3 text-[13px] font-medium hover:bg-subtle"
+            onClick={() =>
+              void api
+                .refreshMetadata(null)
+                .then(() => toast({ type: "info", title: "Fetching missing previews in the background" }))
+                .catch((e) => toast({ type: "error", title: "Couldn't start", body: errorMessage(e) }))
+            }
+          >
+            Fetch now
+          </button>
+        </Row>
+      </Card>
+      <p className="text-xs text-ink-3">More options — start with Windows, tray and cache limits — arrive with Data & Storage.</p>
     </>
   );
 }

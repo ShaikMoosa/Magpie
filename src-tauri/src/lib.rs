@@ -13,9 +13,16 @@ pub fn run() {
         .setup(|app| {
             let dir = app.path().app_data_dir()?;
             std::fs::create_dir_all(&dir)?;
-            let conn = magpie_core::db::open(&dir.join("magpie.db"))
-                .map_err(|e| Box::<dyn std::error::Error>::from(e.to_string()))?;
-            app.manage(AppState { db: Mutex::new(conn) });
+            let db_path = dir.join("magpie.db");
+            let conn = magpie_core::db::open(&db_path).map_err(|e| Box::<dyn std::error::Error>::from(e.to_string()))?;
+            let previews = dir.join("previews");
+            std::fs::create_dir_all(&previews)?;
+            app.manage(AppState {
+                db: Mutex::new(conn),
+                db_path,
+                previews,
+                preview_worker: std::sync::atomic::AtomicBool::new(false),
+            });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -39,6 +46,9 @@ pub fn run() {
             commands::detect_browsers,
             commands::preview_import,
             commands::start_import,
+            commands::previews_dir,
+            commands::fetch_metadata,
+            commands::refresh_metadata,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -12,6 +12,7 @@ import type {
   CategoryInput,
   Counts,
   NewBookmark,
+  PageMeta,
   UpdateBookmark,
   UrlCheck,
 } from "./types";
@@ -51,4 +52,8 @@ export const api = {
   detectBrowsers: () => invoke<BrowserProfile[]>("detect_browsers"),
   previewImport: (source: ImportSource) => invoke<ImportPreview>("preview_import", { source }),
   startImport: (source: ImportSource, options: ImportOptions) => invoke<ImportSummary>("start_import", { source, options }),
+
+  previewsDir: () => invoke<string>("previews_dir"),
+  fetchMetadata: (url: string) => invoke<PageMeta>("fetch_metadata", { url }),
+  refreshMetadata: (ids: string[] | null = null) => invoke<void>("refresh_metadata", { ids }),
 };

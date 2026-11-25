@@ -1,14 +1,14 @@
-import { AlertTriangle, Bookmark as BookmarkIcon, Check, Link2, Pencil, Star, Trash2 } from "lucide-react";
+import { AlertTriangle, Bookmark as BookmarkIcon, Check, ImageIcon, Link2, Loader2, Pencil, Star, Trash2 } from "lucide-react";
 import clsx from "clsx";
 import { useEffect, useState } from "react";
 import { useCategories, useCreateBookmark, useUpdateBookmark } from "../../hooks/queries";
 import { api, errorMessage, isAppError } from "../../lib/api";
 import { UNCATEGORIZED_COLOR } from "../../lib/colors";
 import { formatDate, formatRelative } from "../../lib/format";
-import type { Bookmark, UrlCheck } from "../../lib/types";
+import type { Bookmark, PageMeta, UrlCheck } from "../../lib/types";
 import { toast } from "../../store/toast";
-import { useUi } from "../../store/ui";
-import { Thumbnail } from "../bookmarks/visuals";
+import { usePrefs, useUi } from "../../store/ui";
+import { Favicon, Thumbnail } from "../bookmarks/visuals";
 import { useBookmarkActions } from "../bookmarks/useBookmarkActions";
 import { SecurityBadge } from "../ui/Badges";
 import { Button } from "../ui/Button";
@@ -66,6 +66,46 @@ export function BookmarkDialog({ mode, bookmark, initialUrl, onClose }: { mode: 
   const [allowDuplicate, setAllowDuplicate] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const { check, error } = useUrlCheck(url, bookmark?.id);
+  const autoPreviews = usePrefs((s) => s.autoPreviews);
+  const [meta, setMeta] = useState<PageMeta | null>(null);
+  const [metaState, setMetaState] = useState<"idle" | "loading" | "done" | "failed">("idle");
+  const [metaError, setMetaError] = useState<string | null>(null);
+  const [touched, setTouched] = useState({ title: false, description: false });
+
+  // Fetch the page preview for new bookmarks (the Rust side refuses private addresses).
+  const previewUrl = mode === "add" && autoPreviews && check && check.securityStatus !== "dangerous" ? check.url : null;
+  useEffect(() => {
+    if (!previewUrl) {
+      setMeta(null);
+      setMetaState("idle");
+      return;
+    }
+    let live = true;
+    setMetaState("loading");
+    api
+      .fetchMetadata(previewUrl)
+      .then((m) => {
+        if (!live) return;
+        setMeta(m);
+        setMetaState("done");
+      })
+      .catch((e) => {
+        if (!live) return;
+        setMeta(null);
+        setMetaError(errorMessage(e));
+        setMetaState("failed");
+      });
+    return () => {
+      live = false;
+    };
+  }, [previewUrl]);
+  useEffect(() => {
+    if (!meta) return;
+    if (!touched.title && meta.title) setTitle(meta.title);
+    if (!touched.description && meta.description) setDescription(meta.description);
+    // Only react to newly fetched metadata.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [meta]);
 
   const duplicate = check?.duplicateOf && check.duplicateOf !== bookmark?.id;
   const busy = create.isPending || update.isPending;
@@ -76,7 +116,18 @@ export function BookmarkDialog({ mode, bookmark, initialUrl, onClose }: { mode: 
     setSaveError(null);
     try {
       if (mode === "add") {
-        const b = await create.mutateAsync({ url, title: title || null, description: description || null, categoryId, isFavourite, tags: parseTags(tags), allowDuplicate });
+        const b = await create.mutateAsync({
+          url,
+          title: title || null,
+          description: description || null,
+          categoryId,
+          isFavourite,
+          tags: parseTags(tags),
+          allowDuplicate,
+          thumbnail: meta?.image ?? null,
+          favicon: meta?.favicon ?? null,
+        });
+        if (!meta && autoPreviews) void api.refreshMetadata([b.id]).catch(() => undefined);
         toast({ type: "success", title: "Bookmark saved", body: `${b.title} added to ${category?.name ?? "Uncategorized"}` });
       } else if (bookmark) {
         await update.mutateAsync({ id: bookmark.id, url, title, description: description || null, categoryId, isFavourite, tags: parseTags(tags) });
@@ -115,11 +166,24 @@ export function BookmarkDialog({ mode, bookmark, initialUrl, onClose }: { mode: 
       {check && mode === "add" && (
         <div className="overflow-hidden rounded-[14px] border border-line">
           <div className="flex gap-3.5 p-3">
-            <Thumbnail color={category?.color ?? UNCATEGORIZED_COLOR} className="h-[76px] w-[108px]" />
+            <Thumbnail color={category?.color ?? UNCATEGORIZED_COLOR} file={meta?.image} className="h-[92px] w-[132px]" />
             <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-medium">{title || check.domain}</p>
+              <p className="flex items-center gap-2 text-sm font-medium">
+                <Favicon domain={check.domain} file={meta?.favicon} size={18} />
+                <span className="truncate">{title || meta?.title || check.domain}</span>
+              </p>
               <p className="truncate text-xs text-ink-3">{check.url}</p>
-              <p className="mt-1 text-xs text-ink-3">Previews and descriptions are fetched automatically in an upcoming update.</p>
+              {metaState === "loading" ? (
+                <p className="mt-1 flex items-center gap-1.5 text-xs text-ink-3">
+                  <Loader2 className="size-3 animate-spin" /> Fetching title, description and preview…
+                </p>
+              ) : metaState === "failed" ? (
+                <p className="mt-1 text-xs text-ink-3">Preview unavailable: {metaError} You can still save it.</p>
+              ) : !autoPreviews ? (
+                <p className="mt-1 text-xs text-ink-3">Automatic previews are off in Settings.</p>
+              ) : (
+                <p className="mt-1 line-clamp-2 text-xs text-ink-2">{description || meta?.description || "No description found."}</p>
+              )}
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 border-t border-line bg-subtle px-3.5 py-2.5 text-xs text-ink-2">
@@ -155,14 +219,20 @@ export function BookmarkDialog({ mode, bookmark, initialUrl, onClose }: { mode: 
 
       <div className="grid grid-cols-2 gap-3.5">
         <Field label="Title">
-          <TextInput value={title} onChange={(e) => setTitle(e.target.value)} placeholder={check?.domain ?? "Uses the domain if empty"} maxLength={300} />
+          <TextInput value={title} onChange={(e) => {
+              setTitle(e.target.value);
+              setTouched((t) => ({ ...t, title: true }));
+            }} placeholder={check?.domain ?? "Uses the domain if empty"} maxLength={300} />
         </Field>
         <Field label="Category">
           <CategorySelect categories={categories} value={categoryId} onChange={setCategoryId} />
         </Field>
       </div>
       <Field label="Description">
-        <TextArea value={description} onChange={(e) => setDescription(e.target.value)} rows={2} maxLength={1000} placeholder="Optional" />
+        <TextArea value={description} onChange={(e) => {
+            setDescription(e.target.value);
+            setTouched((t) => ({ ...t, description: true }));
+          }} rows={2} maxLength={1000} placeholder="Optional" />
       </Field>
       <div className="grid grid-cols-[1fr_auto] items-end gap-3.5">
         <Field label="Tags" hint="Separate with spaces or commas">
@@ -218,7 +288,10 @@ export function BookmarkDialog({ mode, bookmark, initialUrl, onClose }: { mode: 
         {bookmark && (
           <aside className="flex w-[280px] shrink-0 flex-col gap-4 border-l border-line bg-subtle p-5 text-xs">
             <span className="font-medium text-ink-2">Preview</span>
-            <Thumbnail color={category?.color ?? UNCATEGORIZED_COLOR} className="h-[140px] w-full" />
+            <Thumbnail color={category?.color ?? UNCATEGORIZED_COLOR} file={bookmark.thumbnailPath} className="h-[140px] w-full" />
+            <Button size="sm" icon={<ImageIcon />} onClick={() => a.refreshPreview([bookmark.id])}>
+              Refresh preview
+            </Button>
             <div className="flex flex-col gap-1.5">
               <span className="font-medium text-ink-2">Security</span>
               <SecurityBadge status={bookmark.securityStatus} className="self-start" />

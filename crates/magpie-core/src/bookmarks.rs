@@ -15,7 +15,7 @@ const RECENT_DAYS: i64 = 30;
 const SELECT: &str = "SELECT b.id, b.url, b.title, b.description, b.domain, b.favicon_path, b.thumbnail_path,
     b.category_id, b.is_favourite, b.source_browser, b.source_folder, b.security_status, b.security_reasons,
     b.security_source, b.security_checked_at, b.created_at, b.updated_at, b.last_opened_at, b.open_count,
-    b.deleted_at,
+    b.deleted_at, b.metadata_status,
     (SELECT group_concat(t.name, char(31)) FROM bookmark_tags bt JOIN tags t ON t.id = bt.tag_id
       WHERE bt.bookmark_id = b.id) AS tags
     FROM bookmarks b";
@@ -48,7 +48,8 @@ fn from_row(r: &Row) -> rusqlite::Result<Bookmark> {
         last_opened_at: r.get(17)?,
         open_count: r.get(18)?,
         deleted_at: r.get(19)?,
-        tags: split(r.get(20)?),
+        metadata_status: r.get(20)?,
+        tags: split(r.get(21)?),
     })
 }
 
@@ -117,6 +118,9 @@ pub(crate) fn insert(conn: &Connection, input: NewBookmark, created_at: Option<&
     let title = clean(input.title).unwrap_or_else(|| parsed.domain.clone());
     let reasons: String = assessment.reasons.join(&REASON_SEP.to_string());
 
+    let cached = |n: &Option<String>| n.clone().filter(|n| crate::metadata::is_cache_name(n));
+    let (thumb, fav) = (cached(&input.thumbnail), cached(&input.favicon));
+    let has_meta = thumb.is_some() || fav.is_some() || input.description.is_some();
     let tx = conn;
     tx.execute(
         "INSERT INTO bookmarks (id, url, normalized_url, title, description, domain, category_id,
@@ -141,6 +145,12 @@ pub(crate) fn insert(conn: &Connection, input: NewBookmark, created_at: Option<&
             ts,
         ],
     )?;
+    if has_meta {
+        tx.execute(
+            "UPDATE bookmarks SET thumbnail_path = ?2, favicon_path = ?3, metadata_status = 'ok', metadata_fetched_at = ?4 WHERE id = ?1",
+            params![id, thumb, fav, now()],
+        )?;
+    }
     set_tags(tx, &id, &input.tags)?;
     reindex(tx, &id)?;
     Ok(id)
@@ -177,7 +187,8 @@ pub fn update(conn: &Connection, input: UpdateBookmark) -> Result<Bookmark> {
         let a = security::assess(&parsed.url);
         tx.execute(
             "UPDATE bookmarks SET security_status = ?2, security_reasons = ?3, security_source = ?4,
-                security_checked_at = ?5, thumbnail_path = NULL, favicon_path = NULL WHERE id = ?1",
+                security_checked_at = ?5, thumbnail_path = NULL, favicon_path = NULL, metadata_status = NULL
+                WHERE id = ?1",
             params![input.id, a.status.as_str(), a.reasons.join(&REASON_SEP.to_string()), security::LOCAL_SOURCE, ts],
         )?;
     }
@@ -435,6 +446,53 @@ pub fn reindex(conn: &Connection, id: &str) -> Result<()> {
     Ok(())
 }
 
+/// Bookmarks whose preview hasn't been fetched yet: (id, url).
+pub fn pending_metadata(conn: &Connection, limit: u32) -> Result<Vec<(String, String)>> {
+    let mut stmt = conn.prepare(
+        "SELECT id, url FROM bookmarks WHERE metadata_status IS NULL AND deleted_at IS NULL
+         ORDER BY created_at DESC LIMIT ?1",
+    )?;
+    let rows = stmt.query_map([limit], |r| Ok((r.get(0)?, r.get(1)?)))?;
+    Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+}
+
+/// Queue bookmarks for a fresh preview fetch.
+pub fn reset_metadata(conn: &Connection, ids: &[String]) -> Result<usize> {
+    let tx = conn.unchecked_transaction()?;
+    let mut n = 0;
+    for id in ids {
+        n += tx.execute("UPDATE bookmarks SET metadata_status = NULL WHERE id = ?1", [id])?;
+    }
+    tx.commit()?;
+    Ok(n)
+}
+
+/// Store fetched preview data. Fills title/description only when they are
+/// still the defaults (title = domain, no description) so user edits win.
+pub fn apply_metadata(conn: &Connection, id: &str, meta: &crate::metadata::PageMeta) -> Result<()> {
+    let current = get(conn, id)?;
+    let title = match &meta.title {
+        Some(t) if current.title == current.domain || current.title.trim().is_empty() => t.clone(),
+        _ => current.title.clone(),
+    };
+    let description = current.description.clone().or_else(|| meta.description.clone());
+    conn.execute(
+        "UPDATE bookmarks SET title = ?2, description = ?3,
+            thumbnail_path = COALESCE(?4, thumbnail_path), favicon_path = COALESCE(?5, favicon_path),
+            metadata_status = 'ok', metadata_fetched_at = ?6 WHERE id = ?1",
+        params![id, title, description, meta.image, meta.favicon, now()],
+    )?;
+    reindex(conn, id)
+}
+
+pub fn mark_metadata_failed(conn: &Connection, id: &str) -> Result<()> {
+    conn.execute(
+        "UPDATE bookmarks SET metadata_status = 'failed', metadata_fetched_at = ?2 WHERE id = ?1",
+        params![id, now()],
+    )?;
+    Ok(())
+}
+
 pub(crate) fn reindex_category(conn: &Connection, category_id: &str) -> Result<()> {
     let ids: Vec<String> = {
         let mut stmt = conn.prepare("SELECT id FROM bookmarks WHERE category_id = ?1")?;
@@ -541,6 +599,45 @@ mod tests {
         assert_eq!(fav.len(), 1);
         let opened = record_open(&c, &a.id).unwrap();
         assert_eq!(opened.open_count, 1);
+    }
+
+    #[test]
+    fn metadata_fills_defaults_but_keeps_user_text() {
+        let c = open_in_memory().unwrap();
+        let a = add(&c, "https://react.dev");
+        let b = create(&c, NewBookmark { url: "https://lucide.dev".into(), title: Some("My icons".into()), ..Default::default() }).unwrap();
+        assert_eq!(pending_metadata(&c, 10).unwrap().len(), 2);
+        let meta = crate::metadata::PageMeta {
+            title: Some("React".into()),
+            description: Some("Docs".into()),
+            image: Some(format!("{}.png", "a".repeat(64))),
+            ..Default::default()
+        };
+        apply_metadata(&c, &a.id, &meta).unwrap();
+        apply_metadata(&c, &b.id, &meta).unwrap();
+        let a = get(&c, &a.id).unwrap();
+        let b = get(&c, &b.id).unwrap();
+        assert_eq!((a.title.as_str(), a.description.as_deref()), ("React", Some("Docs")));
+        assert_eq!(b.title, "My icons", "user titles are kept");
+        assert_eq!(a.metadata_status.as_deref(), Some("ok"));
+        assert!(pending_metadata(&c, 10).unwrap().is_empty());
+        reset_metadata(&c, &[a.id.clone()]).unwrap();
+        assert_eq!(pending_metadata(&c, 10).unwrap().len(), 1);
+        // Searching finds fetched text.
+        assert_eq!(list(&c, &BookmarkQuery { search: Some("docs".into()), ..Default::default() }).unwrap().len(), 2, "both had no description, so both got it");
+    }
+
+    #[test]
+    fn create_only_accepts_cache_file_names() {
+        let c = open_in_memory().unwrap();
+        let b = create(
+            &c,
+            NewBookmark { url: "https://a.com".into(), thumbnail: Some(r"..\..\secret.png".into()), favicon: Some(format!("{}.ico", "b".repeat(64))), ..Default::default() },
+        )
+        .unwrap();
+        assert_eq!(b.thumbnail_path, None);
+        assert!(b.favicon_path.is_some());
+        assert_eq!(b.metadata_status.as_deref(), Some("ok"));
     }
 
     #[test]
