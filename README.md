@@ -16,6 +16,8 @@ The UI follows the Figma file *bookmark* — page **Bookmark Manager - version 2
 
 Requirements: Windows 10 1803+ or Windows 11, [Rust](https://rustup.rs), Node 20+, and the Visual Studio C++ build tools (see the [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/)).
 
+The Rust toolchain is pinned to 1.98.0 in `rust-toolchain.toml` (rustup installs it automatically). Newer Cargo versions use a build-folder layout whose build-script programs some antivirus tools, such as Kaspersky, delete, so the app wouldn't build without an exclusion.
+
 ```powershell
 npm install
 npm run tauri dev
