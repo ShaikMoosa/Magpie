@@ -1,0 +1,7 @@
+# Pinned to the same toolchain as Kernest. Newer Cargo (1.100) uses a new
+# build-directory layout whose build-script executables Kaspersky deletes on
+# this machine; 1.98 keeps the classic layout. Revisit when upgrading.
+[toolchain]
+channel = "1.98.0"
+components = ["clippy", "rustfmt"]
+profile = "minimal"

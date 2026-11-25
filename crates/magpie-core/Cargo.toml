@@ -1,0 +1,17 @@
+[package]
+name = "magpie-core"
+version = "0.1.0"
+edition = "2024"
+description = "Magpie core: database, bookmarks, categories and URL checks (no UI dependencies)"
+publish = false
+
+[dependencies]
+chrono = { version = "0.4.45", features = ["serde"] }
+rusqlite = { version = "0.43.0", features = ["bundled"] }
+serde = { version = "1.0.229", features = ["derive"] }
+thiserror = "2.0.21"
+url = "2.5.9"
+uuid = { version = "1.29.3", features = ["v4"] }
+
+[dev-dependencies]
+serde_json = "1.0.154"
