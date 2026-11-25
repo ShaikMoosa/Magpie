@@ -1,6 +1,7 @@
 mod ai_commands;
 mod commands;
 mod data_commands;
+mod general_commands;
 mod private_browser;
 mod security_commands;
 
@@ -12,6 +13,14 @@ use tauri::Manager;
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        // Must be first: a second launch focuses the running window instead.
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| general_commands::show_main(app)))
+        .plugin(tauri_plugin_autostart::Builder::new().args([general_commands::MINIMISED_ARG]).build())
+        .plugin(
+            tauri_plugin_global_shortcut::Builder::new()
+                .with_handler(|app, shortcut, event| general_commands::on_shortcut(app, shortcut, event.state()))
+                .build(),
+        )
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
@@ -31,6 +40,8 @@ pub fn run() {
                 ai_worker: std::sync::atomic::AtomicBool::new(false),
                 scan_worker: std::sync::atomic::AtomicBool::new(false),
             });
+            general_commands::create_tray(app.handle())?;
+            general_commands::startup(app.handle());
             data_commands::start_auto_backup(app.handle());
             security_commands::scan_stale_at_startup(app.handle());
             Ok(())
@@ -87,12 +98,24 @@ pub fn run() {
             data_commands::restore_backup,
             data_commands::clear_preview_cache,
             data_commands::reset_app_data,
+            general_commands::get_general_settings,
+            general_commands::save_app_behaviour,
+            general_commands::set_autostart,
             security_commands::get_security_settings,
             security_commands::save_security_config,
             security_commands::set_scan_key,
             security_commands::remove_scan_key,
             security_commands::scan_bookmarks,
         ])
+        .on_window_event(|window, event| {
+            // With tray mode on, closing the window keeps Magpie running in the tray.
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                if window.label() == "main" && general_commands::behaviour(window.app_handle()).minimise_to_tray {
+                    api.prevent_close();
+                    let _ = window.hide();
+                }
+            }
+        })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

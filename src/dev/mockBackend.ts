@@ -59,6 +59,10 @@ const mockBackups = [
   { name: "magpie-c-before-import.db", kind: "before-import", createdAt: iso(140), size: 11_800_000 },
 ];
 
+// --- General (mock) ---
+let behaviourCfg = { minimiseToTray: false, refreshDays: 30, cacheLimitMb: 500 };
+let autostart = false;
+
 // --- Security scanners (mock) ---
 let secCfg = {
   enabled: false, google: false, urlhaus: false, virustotal: false, schedule: "on_save_weekly", consent: "ask",
@@ -309,6 +313,9 @@ export function installMockBackend() {
       case "add_tags":
         for (const b of marks.filter((x) => a.ids.includes(x.id))) b.tags = [...new Set([...b.tags, ...a.tags])].sort();
         return a.ids.length;
+      case "get_general_settings": return { behaviour: behaviourCfg, autostart };
+      case "save_app_behaviour": behaviourCfg = a.behaviour; return behaviourCfg;
+      case "set_autostart": autostart = a.enabled; return autostart;
       case "list_categories": return withCounts();
       case "create_category": {
         const i = a.input as CategoryInput;

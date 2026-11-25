@@ -125,7 +125,13 @@ export function BookmarkDialog({ mode, bookmark, initialUrl, onClose }: { mode: 
   const route = useUi((s) => s.route);
   const scan = useExternalScan();
 
-  const defaultCategory = route.page === "library" && route.view === "category" ? (route.categoryId ?? null) : null;
+  const prefCategory = usePrefs((s) => s.defaultCategoryId);
+  const defaultCategory =
+    route.page === "library" && route.view === "category"
+      ? (route.categoryId ?? null)
+      : prefCategory && categories.some((c) => c.id === prefCategory)
+        ? prefCategory
+        : null;
   const [url, setUrl] = useState(bookmark?.url ?? initialUrl ?? "");
   const [title, setTitle] = useState(bookmark?.title ?? "");
   const [description, setDescription] = useState(bookmark?.description ?? "");

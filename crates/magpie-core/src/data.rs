@@ -378,6 +378,94 @@ pub fn restore(conn: &mut Connection, src: &Path, backups_dir: &Path, keep: u32)
     Ok(summary)
 }
 
+// ---------------------------------------------------------------- windows settings
+
+/// Behaviour that the Rust side needs to know about (tray, preview refresh,
+/// cache size). Stored in `application_settings`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct AppBehaviour {
+    pub minimise_to_tray: bool,
+    /// Re-fetch previews older than this many days (0 = never).
+    pub refresh_days: u32,
+    /// Maximum size of the preview cache in MB (0 = no limit).
+    pub cache_limit_mb: u32,
+}
+
+impl Default for AppBehaviour {
+    fn default() -> Self {
+        Self { minimise_to_tray: false, refresh_days: 30, cache_limit_mb: 500 }
+    }
+}
+
+const BEHAVIOUR_KEY: &str = "app_behaviour";
+
+pub fn get_behaviour(conn: &Connection) -> Result<AppBehaviour> {
+    let raw: Option<String> =
+        conn.query_row("SELECT value FROM application_settings WHERE key = ?1", [BEHAVIOUR_KEY], |r| r.get(0)).optional()?;
+    Ok(raw.and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default())
+}
+
+pub fn save_behaviour(conn: &Connection, b: &AppBehaviour) -> Result<AppBehaviour> {
+    let b = AppBehaviour { refresh_days: b.refresh_days.min(365), cache_limit_mb: b.cache_limit_mb.min(10_000), ..b.clone() };
+    let json = serde_json::to_string(&b).map_err(|_| Error::Validation("Couldn't save settings.".into()))?;
+    conn.execute(
+        "INSERT INTO application_settings (key, value) VALUES (?1, ?2) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        params![BEHAVIOUR_KEY, json],
+    )?;
+    Ok(b)
+}
+
+/// Queue previews older than `days` for a fresh fetch. Returns how many.
+pub fn queue_stale_previews(conn: &Connection, days: u32) -> Result<usize> {
+    if days == 0 {
+        return Ok(0);
+    }
+    let cutoff = (chrono::Utc::now() - chrono::Duration::days(days as i64)).to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
+    Ok(conn.execute(
+        "UPDATE bookmarks SET metadata_status = NULL
+         WHERE deleted_at IS NULL AND metadata_status IS NOT NULL AND metadata_fetched_at < ?1",
+        [cutoff],
+    )?)
+}
+
+/// Delete the least recently written preview files until the cache fits in
+/// `limit_bytes`, and forget them on the bookmarks that used them (those
+/// bookmarks show their placeholder until the preview is refreshed).
+pub fn enforce_cache_limit(conn: &Connection, dir: &Path, limit_bytes: u64) -> Result<u64> {
+    if limit_bytes == 0 {
+        return Ok(0);
+    }
+    let mut files: Vec<(std::time::SystemTime, u64, String)> = fs::read_dir(dir)
+        .map(|it| {
+            it.flatten()
+                .filter_map(|e| {
+                    let m = e.metadata().ok().filter(|m| m.is_file())?;
+                    Some((m.modified().unwrap_or(std::time::UNIX_EPOCH), m.len(), e.file_name().to_string_lossy().into_owned()))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    let mut total: u64 = files.iter().map(|f| f.1).sum();
+    if total <= limit_bytes {
+        return Ok(0);
+    }
+    files.sort();
+    let mut freed = 0;
+    for (_, len, name) in files {
+        if total <= limit_bytes {
+            break;
+        }
+        if fs::remove_file(dir.join(&name)).is_ok() {
+            total -= len;
+            freed += len;
+            conn.execute("UPDATE bookmarks SET thumbnail_path = NULL WHERE thumbnail_path = ?1", [&name])?;
+            conn.execute("UPDATE bookmarks SET favicon_path = NULL WHERE favicon_path = ?1", [&name])?;
+        }
+    }
+    Ok(freed)
+}
+
 // ---------------------------------------------------------------- storage
 
 #[derive(Debug, Clone, Serialize)]
@@ -575,6 +663,39 @@ mod tests {
         assert!(auto_backup_if_due(&conn, &backups).unwrap().is_none());
         save_backup_config(&conn, &BackupConfig { daily: false, keep: 3 }).unwrap();
         assert_eq!(get_backup_config(&conn).unwrap().keep, 3);
+    }
+
+    #[test]
+    fn behaviour_defaults_and_stale_previews() {
+        let conn = db::open_in_memory().unwrap();
+        let b = get_behaviour(&conn).unwrap();
+        assert!(!b.minimise_to_tray && b.refresh_days == 30 && b.cache_limit_mb == 500);
+        save_behaviour(&conn, &AppBehaviour { minimise_to_tray: true, refresh_days: 999, cache_limit_mb: 0 }).unwrap();
+        assert_eq!(get_behaviour(&conn).unwrap().refresh_days, 365);
+
+        seed(&conn);
+        conn.execute("UPDATE bookmarks SET metadata_status = 'ok', metadata_fetched_at = '2020-01-01T00:00:00.000Z'", []).unwrap();
+        let fresh = bookmarks::list(&conn, &BookmarkQuery::default()).unwrap()[0].id.clone();
+        conn.execute("UPDATE bookmarks SET metadata_fetched_at = ?2 WHERE id = ?1", params![fresh, db::now()]).unwrap();
+        assert_eq!(queue_stale_previews(&conn, 0).unwrap(), 0);
+        assert_eq!(queue_stale_previews(&conn, 30).unwrap(), 1, "only the old live bookmark is queued");
+    }
+
+    #[test]
+    fn cache_limit_removes_oldest_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let conn = db::open_in_memory().unwrap();
+        seed(&conn);
+        let id = bookmarks::list(&conn, &BookmarkQuery::default()).unwrap()[0].id.clone();
+        fs::write(dir.path().join("old.png"), [0u8; 600]).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(30));
+        fs::write(dir.path().join("new.png"), [0u8; 600]).unwrap();
+        conn.execute("UPDATE bookmarks SET thumbnail_path = 'old.png', favicon_path = 'new.png' WHERE id = ?1", [&id]).unwrap();
+        assert_eq!(enforce_cache_limit(&conn, dir.path(), 0).unwrap(), 0, "0 means no limit");
+        assert_eq!(enforce_cache_limit(&conn, dir.path(), 1000).unwrap(), 600);
+        assert!(!dir.path().join("old.png").exists() && dir.path().join("new.png").exists());
+        let b = bookmarks::get(&conn, &id).unwrap();
+        assert_eq!((b.thumbnail_path, b.favicon_path.as_deref()), (None, Some("new.png")));
     }
 
     #[test]

@@ -1,5 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
+  AppBehaviour,
+  GeneralSettings,
   ScanProvider,
   SecurityConfig,
   SecuritySettings,
@@ -95,6 +97,11 @@ export const api = {
   setScanKey: (provider: ScanProvider, key: string) => invoke<void>("set_scan_key", { provider, key }),
   removeScanKey: (provider: ScanProvider) => invoke<void>("remove_scan_key", { provider }),
   scanBookmarks: (ids: string[] | null, confirmed: boolean) => invoke<number>("scan_bookmarks", { ids, confirmed }),
+
+  // General (Windows integration)
+  getGeneralSettings: () => invoke<GeneralSettings>("get_general_settings"),
+  saveAppBehaviour: (behaviour: AppBehaviour) => invoke<AppBehaviour>("save_app_behaviour", { behaviour }),
+  setAutostart: (enabled: boolean) => invoke<boolean>("set_autostart", { enabled }),
 
   // Data & Storage
   getStorageInfo: () => invoke<StorageInfo>("get_storage_info"),

@@ -328,3 +328,14 @@ export interface ScanProgress {
   finished: boolean;
   error: string | null;
 }
+
+export interface AppBehaviour {
+  minimiseToTray: boolean;
+  refreshDays: number;
+  cacheLimitMb: number;
+}
+
+export interface GeneralSettings {
+  behaviour: AppBehaviour;
+  autostart: boolean;
+}
