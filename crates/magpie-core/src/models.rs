@@ -130,6 +130,8 @@ pub struct BookmarkQuery {
     pub source: Option<String>,
     pub added_within_days: Option<u32>,
     pub limit: Option<u32>,
+    /// Skip this many results (paging; used with `limit`).
+    pub offset: Option<u32>,
 }
 
 #[derive(Debug, Clone, Serialize)]

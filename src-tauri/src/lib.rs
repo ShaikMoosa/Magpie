@@ -48,6 +48,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::list_bookmarks,
+            commands::count_bookmarks,
             commands::get_counts,
             commands::check_url,
             commands::create_bookmark,

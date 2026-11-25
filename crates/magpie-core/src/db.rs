@@ -10,6 +10,7 @@ pub(crate) const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/002_metadata.sql"),
     include_str!("../migrations/003_security_overrides.sql"),
     include_str!("../migrations/004_ai.sql"),
+    include_str!("../migrations/005_search_rowid.sql"),
 ];
 
 /// Open (or create) the library database at `path` and apply migrations.

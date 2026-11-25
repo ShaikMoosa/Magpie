@@ -40,6 +40,11 @@ type CmdResult<T> = Result<T, Error>;
 // ---------- Bookmarks ----------
 
 #[tauri::command]
+pub async fn count_bookmarks(state: State<'_, AppState>, query: BookmarkQuery) -> CmdResult<i64> {
+    bookmarks::count(&state.db(), &query)
+}
+
+#[tauri::command]
 pub async fn list_bookmarks(state: State<'_, AppState>, query: BookmarkQuery) -> CmdResult<Vec<Bookmark>> {
     bookmarks::list(&state.db(), &query)
 }

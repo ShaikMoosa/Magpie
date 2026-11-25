@@ -72,6 +72,7 @@ export interface BookmarkQuery {
   source?: string | null;
   addedWithinDays?: number | null;
   limit?: number;
+  offset?: number;
 }
 
 export interface Facet {

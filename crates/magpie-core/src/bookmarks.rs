@@ -127,8 +127,9 @@ pub(crate) fn insert(conn: &Connection, input: NewBookmark, created_at: Option<&
     tx.execute(
         "INSERT INTO bookmarks (id, url, normalized_url, title, description, domain, category_id,
             is_favourite, source_browser, source_folder, security_status, security_reasons, security_source,
-            security_checked_at, created_at, updated_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?15)",
+            security_checked_at, created_at, updated_at, search_rowid)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?15,
+            (SELECT COALESCE(MAX(search_rowid), 0) + 1 FROM bookmarks))",
         params![
             id,
             parsed.url.as_str(),
@@ -206,8 +207,9 @@ pub fn get(conn: &Connection, id: &str) -> Result<Bookmark> {
         .ok_or(Error::NotFound("Bookmark"))
 }
 
-pub fn list(conn: &Connection, q: &BookmarkQuery) -> Result<Vec<Bookmark>> {
-    let mut sql = format!("{SELECT} WHERE ");
+/// The WHERE clause (without the keyword) and its arguments for a query.
+fn filters(q: &BookmarkQuery) -> Result<(String, Vec<Value>)> {
+    let mut sql = String::new();
     let mut args: Vec<Value> = Vec::new();
 
     sql.push_str(if q.view == View::Trash { "b.deleted_at IS NOT NULL" } else { "b.deleted_at IS NULL" });
@@ -265,10 +267,21 @@ pub fn list(conn: &Connection, q: &BookmarkQuery) -> Result<Vec<Bookmark>> {
         args.push(domain.to_string().into());
     }
     if let Some(m) = q.search.as_deref().and_then(fts_query) {
-        sql.push_str(" AND b.id IN (SELECT bookmark_id FROM bookmarks_fts WHERE bookmarks_fts MATCH ?)");
+        sql.push_str(" AND b.search_rowid IN (SELECT rowid FROM bookmarks_fts WHERE bookmarks_fts MATCH ?)");
         args.push(m.into());
     }
+    Ok((sql, args))
+}
 
+/// How many bookmarks match a query (ignoring paging).
+pub fn count(conn: &Connection, q: &BookmarkQuery) -> Result<i64> {
+    let (filters, args) = filters(q)?;
+    Ok(conn.query_row(&format!("SELECT COUNT(*) FROM bookmarks b WHERE {filters}"), params_from_iter(args), |r| r.get(0))?)
+}
+
+pub fn list(conn: &Connection, q: &BookmarkQuery) -> Result<Vec<Bookmark>> {
+    let (filters, args) = filters(q)?;
+    let mut sql = format!("{SELECT} WHERE {filters}");
     sql.push_str(match q.sort {
         Sort::RecentlyAdded if q.view == View::Trash => " ORDER BY b.deleted_at DESC",
         Sort::RecentlyAdded => " ORDER BY b.created_at DESC",
@@ -279,8 +292,10 @@ pub fn list(conn: &Connection, q: &BookmarkQuery) -> Result<Vec<Bookmark>> {
         Sort::RecentlyOpened => " ORDER BY b.last_opened_at IS NULL, b.last_opened_at DESC",
         Sort::MostOpened => " ORDER BY b.open_count DESC, b.last_opened_at DESC",
     });
+    // Stable order across pages.
+    sql.push_str(", b.id");
     if let Some(limit) = q.limit {
-        sql.push_str(&format!(" LIMIT {limit}"));
+        sql.push_str(&format!(" LIMIT {limit} OFFSET {}", q.offset.unwrap_or(0)));
     }
 
     let mut stmt = conn.prepare(&sql)?;
@@ -385,10 +400,11 @@ pub fn purge(conn: &Connection, ids: &[String]) -> Result<usize> {
     let tx = conn.unchecked_transaction()?;
     let mut n = 0;
     for id in ids {
+        tx.execute(
+            "DELETE FROM bookmarks_fts WHERE rowid = (SELECT search_rowid FROM bookmarks WHERE id = ?1 AND deleted_at IS NOT NULL)",
+            [id],
+        )?;
         let removed = tx.execute("DELETE FROM bookmarks WHERE id = ?1 AND deleted_at IS NOT NULL", [id])?;
-        if removed > 0 {
-            tx.execute("DELETE FROM bookmarks_fts WHERE bookmark_id = ?1", [id])?;
-        }
         n += removed;
     }
     tx.commit()?;
@@ -398,7 +414,7 @@ pub fn purge(conn: &Connection, ids: &[String]) -> Result<usize> {
 pub fn empty_trash(conn: &Connection) -> Result<usize> {
     let tx = conn.unchecked_transaction()?;
     tx.execute(
-        "DELETE FROM bookmarks_fts WHERE bookmark_id IN (SELECT id FROM bookmarks WHERE deleted_at IS NOT NULL)",
+        "DELETE FROM bookmarks_fts WHERE rowid IN (SELECT search_rowid FROM bookmarks WHERE deleted_at IS NOT NULL)",
         [],
     )?;
     let n = tx.execute("DELETE FROM bookmarks WHERE deleted_at IS NOT NULL", [])?;
@@ -476,10 +492,10 @@ fn set_tags(conn: &Connection, bookmark_id: &str, tags: &[String]) -> Result<()>
 
 /// Refresh the full-text index row for one bookmark.
 pub fn reindex(conn: &Connection, id: &str) -> Result<()> {
-    conn.execute("DELETE FROM bookmarks_fts WHERE bookmark_id = ?1", [id])?;
+    conn.execute("DELETE FROM bookmarks_fts WHERE rowid = (SELECT search_rowid FROM bookmarks WHERE id = ?1)", [id])?;
     conn.execute(
-        "INSERT INTO bookmarks_fts (bookmark_id, title, description, url, domain, category, tags)
-         SELECT b.id, b.title, COALESCE(b.description, ''), b.url, b.domain,
+        "INSERT INTO bookmarks_fts (rowid, bookmark_id, title, description, url, domain, category, tags)
+         SELECT b.search_rowid, b.id, b.title, COALESCE(b.description, ''), b.url, b.domain,
             COALESCE((SELECT name FROM categories c WHERE c.id = b.category_id), ''),
             COALESCE((SELECT group_concat(t.name, ' ') FROM bookmark_tags bt JOIN tags t ON t.id = bt.tag_id
                       WHERE bt.bookmark_id = b.id), '')
@@ -504,32 +520,58 @@ fn assess(conn: &Connection, url: &url::Url, domain: &str) -> Result<security::A
 
 /// Re-run local checks for the given bookmarks (all live bookmarks when `None`).
 pub fn rescan(conn: &Connection, ids: Option<&[String]>) -> Result<RescanSummary> {
-    let targets: Vec<(String, String, String)> = {
-        let mut stmt = conn.prepare("SELECT id, url, domain FROM bookmarks WHERE deleted_at IS NULL")?;
-        let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
+    let wanted: Option<std::collections::HashSet<&str>> = ids.map(|ids| ids.iter().map(String::as_str).collect());
+    let targets: Vec<(String, String, String, String, String, Option<String>)> = {
+        let mut stmt = conn.prepare(
+            "SELECT id, url, domain, security_status, COALESCE(security_reasons, ''), security_source FROM bookmarks WHERE deleted_at IS NULL",
+        )?;
+        let rows = stmt.query_map([], |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, String>(2)?,
+                r.get::<_, String>(3)?,
+                r.get::<_, String>(4)?,
+                r.get::<_, Option<String>>(5)?,
+            ))
+        })?;
         rows.collect::<rusqlite::Result<Vec<_>>>()?
             .into_iter()
-            .filter(|(id, _, _)| ids.is_none_or(|ids| ids.contains(id)))
+            .filter(|t| wanted.as_ref().is_none_or(|w| w.contains(t.0.as_str())))
             .collect()
     };
     let tx = conn.unchecked_transaction()?;
+    // Skip per-bookmark history lookups when no provider has ever answered.
+    let any_external: bool = tx.query_row(
+        "SELECT EXISTS(SELECT 1 FROM security_scans WHERE provider IN ('google','urlhaus','virustotal'))",
+        [],
+        |r| r.get(0),
+    )?;
     let mut summary = RescanSummary::default();
     let ts = now();
-    for (id, url, domain) in targets {
+    for (id, url, domain, old_status, old_reasons, old_source) in targets {
         let Ok(parsed) = url::Url::parse(&url) else { continue };
         let a = assess(&tx, &parsed, &domain)?;
         // Keep the latest external verdicts (unless the user trusts this site).
-        let external = if a.reasons.iter().any(|r| r == TRUSTED_REASON) { Vec::new() } else { crate::scanners::latest_results(&tx, &id)? };
+        let trusted = a.reasons.iter().any(|r| r == TRUSTED_REASON);
+        let external = if trusted || !any_external { Vec::new() } else { crate::scanners::latest_results(&tx, &id)? };
         let combined = crate::scanners::combine(&a, &external);
-        tx.execute(
-            "UPDATE bookmarks SET security_status = ?2, security_reasons = ?3, security_source = ?4, security_checked_at = ?5
-             WHERE id = ?1",
-            params![id, combined.status.as_str(), combined.reasons.join(&REASON_SEP.to_string()), combined.source, ts],
-        )?;
-        tx.execute(
-            "INSERT INTO security_scans (id, bookmark_id, provider, status, details, scanned_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            params![new_id(), id, security::LOCAL_SOURCE, a.status.as_str(), a.reasons.join("; "), ts],
-        )?;
+        let reasons = combined.reasons.join(&REASON_SEP.to_string());
+        let unchanged = old_status == combined.status.as_str() && old_reasons == reasons && old_source.as_deref() == Some(combined.source.as_str());
+        if unchanged {
+            // Same result: just record when it was checked, without growing the history.
+            tx.execute("UPDATE bookmarks SET security_checked_at = ?2 WHERE id = ?1", params![id, ts])?;
+        } else {
+            tx.execute(
+                "UPDATE bookmarks SET security_status = ?2, security_reasons = ?3, security_source = ?4, security_checked_at = ?5
+                 WHERE id = ?1",
+                params![id, combined.status.as_str(), reasons, combined.source, ts],
+            )?;
+            tx.execute(
+                "INSERT INTO security_scans (id, bookmark_id, provider, status, details, scanned_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                params![new_id(), id, security::LOCAL_SOURCE, a.status.as_str(), a.reasons.join("; "), ts],
+            )?;
+        }
         summary.scanned += 1;
         if matches!(combined.status, SecurityStatus::Suspicious | SecurityStatus::Dangerous) {
             summary.suspicious += 1;
@@ -653,6 +695,50 @@ pub(crate) fn reindex_category(conn: &Connection, category_id: &str) -> Result<(
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn search_index_stays_in_step() {
+        let c = crate::db::open_in_memory().unwrap();
+        let search = |q: &str, view: View| list(&c, &BookmarkQuery { search: Some(q.into()), view, ..Default::default() }).unwrap().len();
+        let fts_rows = || c.query_row("SELECT COUNT(*) FROM bookmarks_fts", [], |r| r.get::<_, i64>(0)).unwrap();
+        let a = create(&c, NewBookmark { url: "https://a.example".into(), title: Some("Alpha guide".into()), ..Default::default() }).unwrap();
+        let b = create(&c, NewBookmark { url: "https://b.example".into(), title: Some("Beta notes".into()), ..Default::default() }).unwrap();
+        assert_eq!((search("alpha", View::All), fts_rows()), (1, 2));
+
+        update(&c, UpdateBookmark { id: a.id.clone(), url: a.url.clone(), title: "Gamma guide".into(), description: None, category_id: None, is_favourite: false, tags: vec![] }).unwrap();
+        assert_eq!((search("alpha", View::All), search("gamma", View::All), fts_rows()), (0, 1, 2), "update replaces, never duplicates");
+
+        trash(&c, std::slice::from_ref(&a.id)).unwrap();
+        assert_eq!((search("gamma", View::All), search("gamma", View::Trash)), (0, 1));
+        restore(&c, std::slice::from_ref(&a.id)).unwrap();
+        assert_eq!(search("gamma", View::All), 1);
+
+        trash(&c, &[a.id.clone(), b.id.clone()]).unwrap();
+        purge(&c, std::slice::from_ref(&a.id)).unwrap();
+        assert_eq!(fts_rows(), 1);
+        empty_trash(&c).unwrap();
+        assert_eq!(fts_rows(), 0);
+
+        // New bookmarks keep getting fresh index rows after deletions.
+        create(&c, NewBookmark { url: "https://c.example".into(), title: Some("Delta".into()), ..Default::default() }).unwrap();
+        assert_eq!((search("delta", View::All), fts_rows()), (1, 1));
+    }
+
+    #[test]
+    fn paging_is_stable() {
+        let c = crate::db::open_in_memory().unwrap();
+        for i in 0..25 {
+            insert(&c, NewBookmark { url: format!("https://p{i}.example"), ..Default::default() }, Some("2026-01-01T00:00:00.000Z")).unwrap();
+        }
+        let page = |o| list(&c, &BookmarkQuery { limit: Some(10), offset: Some(o), ..Default::default() }).unwrap();
+        let mut ids: Vec<String> = [0, 10, 20].into_iter().flat_map(|o| page(o).into_iter().map(|b| b.id)).collect();
+        assert_eq!(ids.len(), 25);
+        ids.sort();
+        ids.dedup();
+        assert_eq!(ids.len(), 25, "same timestamps never repeat or skip across pages");
+        assert_eq!(count(&c, &BookmarkQuery { limit: Some(10), ..Default::default() }).unwrap(), 25);
+        assert_eq!(count(&c, &BookmarkQuery { search: Some("p3".into()), ..Default::default() }).unwrap(), 1);
+    }
 
     #[test]
     fn add_tags_merges() {

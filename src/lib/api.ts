@@ -47,6 +47,7 @@ export function errorMessage(e: unknown): string {
 
 export const api = {
   listBookmarks: (query: BookmarkQuery) => invoke<Bookmark[]>("list_bookmarks", { query }),
+  countBookmarks: (query: BookmarkQuery) => invoke<number>("count_bookmarks", { query }),
   getCounts: () => invoke<Counts>("get_counts"),
   checkUrl: (url: string, excludeId?: string) => invoke<UrlCheck>("check_url", { url, excludeId: excludeId ?? null }),
   createBookmark: (input: NewBookmark) => invoke<Bookmark>("create_bookmark", { input }),
