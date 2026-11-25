@@ -25,17 +25,25 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: src-tauri -> target
+          workspaces: |
+            src-tauri -> target
+            crates/magpie-core -> target
 
+      # `npm ci` trips over an optional wasm peer of Tailwind's oxide engine
+      # (npm/cli lock-file bug); `npm install` resolves the same lock file.
       - name: Install npm dependencies
-        run: npm ci
+        run: npm install --no-audit --no-fund
 
       - name: Type-check and frontend tests
         run: |
           npm run typecheck
           npm test -- --passWithNoTests
 
-      - name: Rust tests
+      - name: Core library tests
+        working-directory: crates/magpie-core
+        run: cargo test --locked
+
+      - name: App crate tests
         working-directory: src-tauri
         run: cargo test --locked
 
