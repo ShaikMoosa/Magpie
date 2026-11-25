@@ -1,0 +1,81 @@
+@import "tailwindcss";
+@import "@fontsource-variable/inter";
+
+/*
+ * Design tokens — mirrors the "Magpie Tokens" variable collection in Figma
+ * (file 1EpGqZlyjNhNI9B0d4OzRa, page "Bookmark Manager - version 2").
+ * Light theme only.
+ */
+@theme {
+  --font-sans: "Inter Variable", "Inter", "Segoe UI", system-ui, sans-serif;
+
+  --color-brand-700: #4b00c1;
+  --color-brand-600: #7a12ec;
+  --color-brand-500: #8917f9;
+  --color-brand-400: #ad53fb;
+  --color-brand-100: #ebddfe;
+  --color-brand-50: #f6f0ff;
+
+  --color-canvas: #ffffff;
+  --color-subtle: #f8f8fb;
+  --color-muted: #f1f1f5;
+  --color-overlay: #0f1117;
+
+  --color-line: #ececf1;
+  --color-line-strong: #dcdde5;
+
+  --color-ink: #16181d;
+  --color-ink-2: #5b6070;
+  --color-ink-3: #8a8fa0;
+
+  --color-danger: #dc2626;
+  --color-danger-bg: #fef2f2;
+  --color-warning: #d97706;
+  --color-warning-bg: #fffbeb;
+  --color-success: #16a34a;
+  --color-success-bg: #f0fdf4;
+
+  --shadow-sm: 0 1px 2px rgb(23 26 38 / 0.05);
+  --shadow-md: 0 4px 12px rgb(23 26 38 / 0.06), 0 1px 3px rgb(23 26 38 / 0.05);
+  --shadow-lg: 0 24px 48px -8px rgb(23 26 38 / 0.14), 0 4px 12px rgb(23 26 38 / 0.06);
+
+  --radius-card: 14px;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+  color: var(--color-ink);
+  background: var(--color-canvas);
+  -webkit-font-smoothing: antialiased;
+  font-feature-settings: "cv11", "ss01";
+  user-select: none;
+  overflow: hidden;
+}
+
+input,
+textarea {
+  user-select: text;
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-brand-500);
+  outline-offset: 2px;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-line-strong);
+  border-radius: 999px;
+  border: 3px solid transparent;
+  background-clip: padding-box;
+}
