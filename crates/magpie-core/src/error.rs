@@ -16,6 +16,8 @@ pub enum Error {
     Validation(String),
     #[error("Could not read or write a file.")]
     Io(#[from] std::io::Error),
+    #[error("{0}")]
+    Network(String),
 }
 
 impl Error {
@@ -27,6 +29,7 @@ impl Error {
             Error::NotFound(_) => "NOT_FOUND",
             Error::Validation(_) => "VALIDATION_ERROR",
             Error::Io(_) => "IO_ERROR",
+            Error::Network(_) => "NETWORK_ERROR",
         }
     }
 }

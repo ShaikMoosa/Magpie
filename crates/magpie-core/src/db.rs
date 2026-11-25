@@ -5,7 +5,10 @@ use rusqlite::Connection;
 
 use crate::error::Result;
 
-const MIGRATIONS: &[&str] = &[include_str!("../migrations/001_init.sql")];
+const MIGRATIONS: &[&str] = &[
+    include_str!("../migrations/001_init.sql"),
+    include_str!("../migrations/002_metadata.sql"),
+];
 
 /// Open (or create) the library database at `path` and apply migrations.
 pub fn open(path: &Path) -> Result<Connection> {

@@ -30,7 +30,7 @@ function add(url: string, title: string, description: string | null, categoryId:
   marks.push({
     id: id(), url, title, description, domain, faviconPath: null, thumbnailPath: null, categoryId, isFavourite: false,
     sourceBrowser: null, sourceFolder: null, securityStatus: "not_checked", securityReasons: [], securitySource: "Local heuristics",
-    securityCheckedAt: iso(hoursAgo), tags: [], createdAt: iso(hoursAgo), updatedAt: iso(hoursAgo), lastOpenedAt: null, openCount: 0, deletedAt: null, ...extra,
+    securityCheckedAt: iso(hoursAgo), tags: [], createdAt: iso(hoursAgo), updatedAt: iso(hoursAgo), lastOpenedAt: null, openCount: 0, deletedAt: null, metadataStatus: "ok", ...extra,
   });
 }
 add("https://www.figma.com/community/ui-kits", "Figma Community — UI Kits", "Thousands of free UI kits, wireframes and design systems shared by designers around the world.", uiKits.id, 2, { isFavourite: true, openCount: 48 });
@@ -186,6 +186,12 @@ export function installMockBackend() {
         return null;
       }
       case "reorder_categories": return null;
+      case "previews_dir": return "";
+      case "refresh_metadata": return null;
+      case "fetch_metadata": {
+        const host = new URL(a.url).hostname.replace(/^www\./, "");
+        return { title: `${host[0].toUpperCase()}${host.slice(1)} — Example page title`, description: "A short description fetched from the page's metadata.", siteName: host, image: null, favicon: null, finalUrl: a.url };
+      }
       case "detect_browsers":
         return [
           { browser: "chrome", dir: "Default", name: "Personal", bookmarkCount: 1068 },

@@ -24,6 +24,7 @@ export interface Bookmark {
   lastOpenedAt: string | null;
   openCount: number;
   deletedAt: string | null;
+  metadataStatus: "ok" | "failed" | null;
 }
 
 export interface NewBookmark {
@@ -34,6 +35,8 @@ export interface NewBookmark {
   isFavourite?: boolean;
   tags?: string[];
   allowDuplicate?: boolean;
+  thumbnail?: string | null;
+  favicon?: string | null;
 }
 
 export interface UpdateBookmark {
@@ -158,4 +161,13 @@ export interface ImportSummary {
   duplicatesSkipped: number;
   invalidSkipped: number;
   categoriesCreated: number;
+}
+
+export interface PageMeta {
+  title: string | null;
+  description: string | null;
+  siteName: string | null;
+  image: string | null;
+  favicon: string | null;
+  finalUrl: string | null;
 }

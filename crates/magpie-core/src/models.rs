@@ -53,6 +53,8 @@ pub struct Bookmark {
     pub last_opened_at: Option<String>,
     pub open_count: i64,
     pub deleted_at: Option<String>,
+    /// `None` = preview not fetched yet, `ok`, or `failed`.
+    pub metadata_status: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -68,6 +70,9 @@ pub struct NewBookmark {
     pub allow_duplicate: bool,
     pub source_browser: Option<String>,
     pub source_folder: Option<String>,
+    /// Cached preview image / favicon from `fetch_metadata` (cache file names).
+    pub thumbnail: Option<String>,
+    pub favicon: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

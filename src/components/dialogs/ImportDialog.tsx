@@ -166,6 +166,7 @@ export function ImportDialog({ initial, onClose }: { initial?: Kind; onClose: ()
       setSummary(s);
       setStep("done");
       setWelcomeDone(true);
+      if (usePrefs.getState().autoPreviews) void api.refreshMetadata(null).catch(() => undefined);
       await qc.invalidateQueries();
       void qc.invalidateQueries({ queryKey: keys.bookmarks() });
     } catch (e) {
@@ -327,7 +328,7 @@ export function ImportDialog({ initial, onClose }: { initial?: Kind; onClose: ()
                 </div>
               </div>
             </div>
-            <p className="text-xs text-ink-3">Local URL checks run during import. Previews and descriptions are fetched in a later update.</p>
+            <p className="text-xs text-ink-3">Local URL checks run during import. Titles, descriptions and preview images are then fetched in the background.</p>
           </>
         )}
 

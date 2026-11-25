@@ -71,6 +71,9 @@ interface Prefs {
   /** First-run welcome screen was dismissed or an import finished. */
   welcomeDone: boolean;
   setWelcomeDone: (v: boolean) => void;
+  /** Fetch titles, descriptions and preview images from websites. */
+  autoPreviews: boolean;
+  setAutoPreviews: (v: boolean) => void;
   setViewMode: (v: ViewMode) => void;
   setDefaultSort: (s: Sort) => void;
   setConfirmDelete: (v: boolean) => void;
@@ -85,6 +88,8 @@ export const usePrefs = create<Prefs>()(
       confirmDelete: true,
       welcomeDone: false,
       setWelcomeDone: (welcomeDone) => set({ welcomeDone }),
+      autoPreviews: true,
+      setAutoPreviews: (autoPreviews) => set({ autoPreviews }),
       setViewMode: (viewMode) => set({ viewMode }),
       setDefaultSort: (defaultSort) => set({ defaultSort }),
       setConfirmDelete: (confirmDelete) => set({ confirmDelete }),
