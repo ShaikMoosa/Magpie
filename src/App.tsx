@@ -1,5 +1,6 @@
 import { useAiProgressListener } from "./components/library/AiReview";
 import { ScanConsentHost, useScanProgressListener } from "./components/library/ExternalScan";
+import { applyAccent } from "./lib/accent";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { listen } from "@tauri-apps/api/event";
 import { api } from "./lib/api";
@@ -136,6 +137,22 @@ function Shell() {
   const autoPreviews = usePrefs((s) => s.autoPreviews);
   useAiProgressListener();
   useScanProgressListener();
+  const accent = usePrefs((s) => s.accent);
+  useEffect(() => applyAccent(accent), [accent]);
+  useEffect(() => {
+    // Tray menu or Ctrl+Alt+B: open Add bookmark, prefilled from the clipboard when it holds a link.
+    const un = listen("quick-add", async () => {
+      let url: string | undefined;
+      try {
+        const text = (await navigator.clipboard.readText()).trim();
+        if (/^https?:\/\/\S+$/i.test(text)) url = text;
+      } catch {
+        // Clipboard not available: open empty.
+      }
+      useUi.getState().openDialog({ kind: "add-bookmark", url });
+    }).catch(() => () => undefined);
+    return () => void un.then((f) => f());
+  }, []);
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout> | undefined;
     const un = listen("previews-updated", () => {

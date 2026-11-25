@@ -9,7 +9,11 @@ import { SecuritySettingsPanel } from "./SecuritySettings";
 import { Kbd, Toggle } from "../components/ui/Field";
 import { api, errorMessage } from "../lib/api";
 import { toast } from "../store/toast";
-import type { Sort, ViewMode } from "../lib/types";
+import type { AppBehaviour, Sort, ViewMode } from "../lib/types";
+import { ACCENTS, type Accent } from "../lib/accent";
+import { formatBytes } from "../lib/format";
+import { useCategories } from "../hooks/queries";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { usePrefs, useUi, type SettingsSection } from "../store/ui";
 
 type Section = SettingsSection;
@@ -62,10 +66,56 @@ function Segmented<T extends string>({ value, options, onChange }: { value: T; o
   );
 }
 
+const selectCls = "h-9 w-[200px] rounded-[9px] border border-line-strong bg-canvas px-2.5 text-[13px]";
+
 function General() {
   const p = usePrefs();
+  const qc = useQueryClient();
+  const { data: categories = [] } = useCategories();
+  const { data: general } = useQuery({ queryKey: ["general-settings"], queryFn: api.getGeneralSettings });
+  const { data: storage } = useQuery({ queryKey: ["storage"], queryFn: api.getStorageInfo });
+  const b = general?.behaviour;
+
+  const saveBehaviour = async (patch: Partial<AppBehaviour>) => {
+    if (!b) return;
+    try {
+      await api.saveAppBehaviour({ ...b, ...patch });
+      await qc.invalidateQueries({ queryKey: ["general-settings"] });
+      await qc.invalidateQueries({ queryKey: ["storage"] });
+    } catch (e) {
+      toast({ type: "error", title: "Couldn't save the setting", body: errorMessage(e) });
+    }
+  };
+  const setAutostart = async (on: boolean) => {
+    try {
+      await api.setAutostart(on);
+      await qc.invalidateQueries({ queryKey: ["general-settings"] });
+    } catch (e) {
+      toast({ type: "error", title: "Couldn't change the startup setting", body: errorMessage(e) });
+    }
+  };
+
   return (
     <>
+      <p className="-mt-3 text-[13px] text-ink-2">Appearance, defaults and how Magpie behaves on Windows.</p>
+      <Card title="Appearance">
+        <Row label="Accent colour" hint="Used for buttons, selection and highlights">
+          <div className="flex gap-2" role="radiogroup" aria-label="Accent colour">
+            {(Object.keys(ACCENTS) as Accent[]).map((a) => (
+              <button
+                key={a}
+                role="radio"
+                aria-checked={p.accent === a}
+                aria-label={ACCENTS[a].label}
+                title={ACCENTS[a].label}
+                onClick={() => p.setAccent(a)}
+                className={clsx("size-6 rounded-full ring-offset-2 ring-offset-canvas", p.accent === a && "ring-2")}
+                style={{ background: ACCENTS[a].swatch, ["--tw-ring-color" as string]: ACCENTS[a].swatch }}
+              />
+            ))}
+          </div>
+        </Row>
+      </Card>
       <Card title="Library defaults">
         <Row label="Default view" hint="How bookmarks are shown in every section">
           <Segmented<ViewMode>
@@ -79,11 +129,7 @@ function General() {
           />
         </Row>
         <Row label="Default sort">
-          <select
-            value={p.defaultSort}
-            onChange={(e) => p.setDefaultSort(e.target.value as Sort)}
-            className="h-9 w-[200px] rounded-[9px] border border-line-strong bg-canvas px-2.5 text-[13px]"
-          >
+          <select value={p.defaultSort} onChange={(e) => p.setDefaultSort(e.target.value as Sort)} className={selectCls}>
             <option value="recently_added">Recently added</option>
             <option value="recently_modified">Recently modified</option>
             <option value="title_asc">Title A–Z</option>
@@ -91,8 +137,51 @@ function General() {
             <option value="most_opened">Most opened</option>
           </select>
         </Row>
+        <Row label="Default category for new bookmarks" hint="Used when AI is off or unsure">
+          <select
+            value={p.defaultCategoryId && categories.some((c) => c.id === p.defaultCategoryId) ? p.defaultCategoryId : ""}
+            onChange={(e) => p.setDefaultCategoryId(e.target.value || null)}
+            className={selectCls}
+          >
+            <option value="">Uncategorized</option>
+            {categories.map((c) => {
+              const parent = c.parentId ? categories.find((x) => x.id === c.parentId) : null;
+              return (
+                <option key={c.id} value={c.id}>
+                  {parent ? `${parent.name} › ${c.name}` : c.name}
+                </option>
+              );
+            })}
+          </select>
+        </Row>
         <Row label="Confirm before deleting" hint="Ask before moving several bookmarks to Trash">
           <Toggle checked={p.confirmDelete} onChange={p.setConfirmDelete} label="Confirm before deleting" />
+        </Row>
+      </Card>
+      <Card title="Windows">
+        <Row label="Launch Magpie when Windows starts" hint={b?.minimiseToTray ? "Starts quietly in the system tray" : undefined}>
+          <Toggle checked={!!general?.autostart} onChange={(v) => void setAutostart(v)} label="Launch Magpie when Windows starts" />
+        </Row>
+        <Row label="Minimise to system tray" hint="Closing the window keeps Magpie running for quick add (Ctrl Alt B)">
+          <Toggle checked={!!b?.minimiseToTray} onChange={(v) => void saveBehaviour({ minimiseToTray: v })} label="Minimise to system tray" />
+        </Row>
+        <Row label="Refresh bookmark previews" hint="Re-fetch titles, descriptions and thumbnails">
+          <select value={b?.refreshDays ?? 30} onChange={(e) => void saveBehaviour({ refreshDays: Number(e.target.value) })} className={selectCls}>
+            <option value={0}>Never</option>
+            <option value={7}>Every 7 days</option>
+            <option value={30}>Every 30 days</option>
+            <option value={90}>Every 90 days</option>
+          </select>
+        </Row>
+        <Row label="Thumbnail cache limit" hint={storage ? `Currently using ${formatBytes(storage.previewsBytes)}` : undefined}>
+          <select value={b?.cacheLimitMb ?? 500} onChange={(e) => void saveBehaviour({ cacheLimitMb: Number(e.target.value) })} className={selectCls}>
+            <option value={100}>100 MB</option>
+            <option value={250}>250 MB</option>
+            <option value={500}>500 MB</option>
+            <option value={1000}>1 GB</option>
+            <option value={2000}>2 GB</option>
+            <option value={0}>No limit</option>
+          </select>
         </Row>
       </Card>
       <Card title="Link previews">
@@ -113,7 +202,6 @@ function General() {
           </button>
         </Row>
       </Card>
-      <p className="text-xs text-ink-3">Start with Windows and the tray icon arrive in a later update.</p>
     </>
   );
 }
@@ -123,6 +211,9 @@ const SHORTCUTS: [string, string[]][] = [
   ["Search", ["Ctrl", "K"]],
   ["Focus search", ["Ctrl", "F"]],
   ["Open favourites", ["Ctrl", "Shift", "F"]],
+  ["Open in private window", ["Ctrl", "Shift", "N"]],
+  ["Copy URL", ["Ctrl", "Shift", "C"]],
+  ["Quick add from anywhere (tray mode)", ["Ctrl", "Alt", "B"]],
   ["Open selected bookmark", ["Ctrl", "Enter"]],
   ["Toggle favourite (selected)", ["Ctrl", "D"]],
   ["Edit selected bookmark", ["F2"]],

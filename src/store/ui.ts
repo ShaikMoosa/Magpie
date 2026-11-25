@@ -1,3 +1,4 @@
+import type { Accent } from "../lib/accent";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { Bookmark, Category, LibraryView, Sort, ViewMode } from "../lib/types";
@@ -78,6 +79,11 @@ interface Prefs {
   setViewMode: (v: ViewMode) => void;
   setDefaultSort: (s: Sort) => void;
   setConfirmDelete: (v: boolean) => void;
+  accent: Accent;
+  setAccent: (a: Accent) => void;
+  /** Category for new bookmarks when nothing else picks one (null = Uncategorized). */
+  defaultCategoryId: string | null;
+  setDefaultCategoryId: (id: string | null) => void;
 }
 
 /** User preferences kept in local storage (no sensitive data). */
@@ -94,6 +100,10 @@ export const usePrefs = create<Prefs>()(
       setViewMode: (viewMode) => set({ viewMode }),
       setDefaultSort: (defaultSort) => set({ defaultSort }),
       setConfirmDelete: (confirmDelete) => set({ confirmDelete }),
+      accent: "violet",
+      setAccent: (accent) => set({ accent }),
+      defaultCategoryId: null,
+      setDefaultCategoryId: (defaultCategoryId) => set({ defaultCategoryId }),
     }),
     { name: "magpie.prefs" },
   ),

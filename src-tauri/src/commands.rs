@@ -278,6 +278,7 @@ fn start_preview_worker(app: &AppHandle, state: &AppState) {
                 break;
             }
         }
+        crate::general_commands::trim_cache(&app);
     });
 }
 
