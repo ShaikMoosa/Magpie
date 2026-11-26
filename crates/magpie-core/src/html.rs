@@ -53,7 +53,13 @@ pub fn decode_entities(s: &str) -> String {
     while let Some(p) = rest.find('&') {
         out.push_str(&rest[..p]);
         rest = &rest[p..];
-        let window = &rest[..rest.len().min(10)];
+        // Entities are short; only look a few bytes ahead, but never cut a
+        // multi-byte character in half (that would panic).
+        let mut cut = rest.len().min(10);
+        while !rest.is_char_boundary(cut) {
+            cut -= 1;
+        }
+        let window = &rest[..cut];
         let Some(semi) = window.find(';') else {
             out.push('&');
             rest = &rest[1..];
@@ -121,6 +127,31 @@ pub fn tags(html: &str) -> impl Iterator<Item = (String, &str, usize)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn decode_entities_handles_multibyte_text_after_ampersand() {
+        // Regression: the look-ahead window used to cut '—' in half and panic,
+        // which aborted the app during background preview fetches.
+        assert_eq!(decode_entities("Tom & Jerry — cartoons"), "Tom & Jerry — cartoons");
+        assert_eq!(decode_entities("A &🙂🙂🙂 b"), "A &🙂🙂🙂 b");
+        assert_eq!(decode_entities("&नमस्ते दुनिया"), "&नमस्ते दुनिया");
+        assert_eq!(decode_entities("é&amp;—&hellip;"), "é&—…");
+        // Every cut position around multi-byte characters stays safe.
+        let s = "&a—b—c—d—e—f&amp;";
+        for i in 0..s.len() {
+            if s.is_char_boundary(i) {
+                let _ = decode_entities(&s[i..]);
+            }
+        }
+    }
+
+    #[test]
+    fn parse_head_survives_multibyte_entities() {
+        let html = "<head><title>Q&A — ঢাকা</title><meta name=\"description\" content=\"R&D 🚀 notes\"></head>";
+        let head = crate::metadata::parse_head(html);
+        assert_eq!(head.title.as_deref(), Some("Q&A — ঢাকা"));
+        assert_eq!(head.description.as_deref(), Some("R&D 🚀 notes"));
+    }
 
     #[test]
     fn attributes() {
