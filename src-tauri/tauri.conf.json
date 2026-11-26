@@ -47,6 +47,14 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "category": "Productivity",
+    "copyright": "© 2026 Shaik Moosa",
+    "longDescription": "Magpie is a local-first bookmark manager for Windows: import from Chrome, Edge or HTML, organise links into colour-coded categories, search instantly, and get warned about unsafe sites before opening them. Optional AI categorisation and threat-intelligence lookups use your own API keys.",
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser"
+      }
+    }
   }
 }
