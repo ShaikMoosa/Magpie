@@ -3,6 +3,7 @@
 // and implements just enough of each command to review the UI.
 
 import { mockIPC, mockWindows } from "@tauri-apps/api/mocks";
+import { usePrefs, useUi } from "../store/ui";
 import type { AiConfig, AiSuggestion, Bookmark, BookmarkQuery, Category, CategoryInput, NewBookmark, UpdateBookmark } from "../lib/types";
 
 const now = Date.now();
@@ -144,7 +145,8 @@ function list(q: BookmarkQuery) {
     : by === "most_opened" ? b.openCount - a.openCount
     : +new Date(b.createdAt) - +new Date(a.createdAt),
   );
-  return q.limit ? r.slice(0, q.limit) : r;
+  const from = q.offset ?? 0;
+  return q.limit ? r.slice(from, from + q.limit) : r;
 }
 
 function checkUrl(raw: string, exclude?: string | null) {
@@ -169,18 +171,74 @@ function checkUrl(raw: string, exclude?: string | null) {
   };
 }
 
+/**
+ * `?shot=<name>` opens a screen with representative data, for the README
+ * screenshots (docs/screenshots). Dev-only, like the rest of this file.
+ */
+function prepareShot(shot: string) {
+  usePrefs.setState({ welcomeDone: true, accent: "violet" });
+  aiConfig = { ...aiConfig, enabled: true };
+  aiKeys.add("anthropic");
+  secCfg = { ...secCfg, enabled: true, google: true, urlhaus: true };
+  scanKeys.add("google");
+  scanKeys.add("urlhaus");
+  for (const b of marks) {
+    if (b.domain.includes("paypa1")) {
+      b.securityStatus = "dangerous";
+      b.securitySource = "Google Safe Browsing \u00b7 URLhaus \u00b7 Local heuristics";
+      b.securityReasons = ["Google Safe Browsing lists this as phishing or a deceptive site", ...b.securityReasons];
+    } else if (b.securityStatus === "not_checked") {
+      b.securityStatus = "no_threat";
+      b.securitySource = "Google Safe Browsing \u00b7 URLhaus \u00b7 Local heuristics";
+    }
+    if (!b.categoryId && !b.deletedAt && !b.domain.includes("paypa1")) pending.set(b.id, { ...guess(b.url, b.title), createdAt: new Date().toISOString() });
+  }
+  const ui = useUi.getState();
+  switch (shot) {
+    case "library":
+      ui.navigate({ page: "library", view: "all" });
+      break;
+    case "ai":
+      ui.navigate({ page: "library", view: "uncategorized" });
+      break;
+    case "security":
+      ui.navigate({ page: "library", view: "security" });
+      break;
+    case "settings":
+      ui.navigate({ page: "settings", section: "security" });
+      break;
+    case "add":
+      ui.openDialog({ kind: "add-bookmark", url: "https://dribbble.com/shots/popular" });
+      break;
+    case "import":
+      ui.openDialog({ kind: "import", source: "chrome" });
+      break;
+  }
+}
+
 export function installMockBackend() {
+  // `?big` adds 5,000 generated bookmarks to try paging and scrolling.
+  if (new URLSearchParams(location.search).has("big")) {
+    const words = ["react", "rust", "design", "figma", "guide", "icons", "motion", "research", "notes", "travel"];
+    for (let i = 0; i < 5000; i++) {
+      const w = (k: number) => words[(i * 7 + k * 13) % words.length];
+      add(`https://example-${i}.dev/${w(1)}`, `${w(0)} ${w(2)} ${w(3)} #${i}`, null, i % 3 ? cats[i % cats.length].id : null, 50 + i);
+    }
+  }
   // `?empty` starts with an empty library (shows the first-run welcome screen).
   if (new URLSearchParams(location.search).has("empty")) {
     marks.length = 0;
     cats.length = 0;
     localStorage.removeItem("magpie.prefs");
   }
+  const shot = new URLSearchParams(location.search).get("shot");
+  if (shot) setTimeout(() => prepareShot(shot), 0);
   mockWindows("main");
   mockIPC(async (cmd, payload) => {
     const a = (payload ?? {}) as Record<string, any>;
     switch (cmd) {
       case "list_bookmarks": return list(a.query);
+      case "count_bookmarks": return list({ ...a.query, limit: undefined, offset: undefined }).length;
       case "get_counts": return counts();
       case "check_url": return checkUrl(a.url, a.excludeId);
       case "create_bookmark": {
