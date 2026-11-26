@@ -333,7 +333,18 @@ mod tests {
     #[test]
     fn local_hosts_are_refused_before_connecting() {
         let f = Fetcher::new(std::env::temp_dir());
-        for url in ["http://localhost:1/", "http://127.0.0.1:9/", "http://192.168.0.1/"] {
+        // Includes encodings that resolve to loopback or cloud metadata (SSRF tricks).
+        for url in [
+            "http://localhost:1/",
+            "http://127.0.0.1:9/",
+            "http://192.168.0.1/",
+            "http://2130706433/",
+            "http://0x7f.1/",
+            "http://017700000001/",
+            "http://[::ffff:127.0.0.1]/",
+            "http://[::1]/",
+            "http://169.254.169.254/latest/meta-data/",
+        ] {
             let err = f.fetch(url).unwrap_err();
             assert!(err.to_string().contains("private"), "{url}: {err}");
         }

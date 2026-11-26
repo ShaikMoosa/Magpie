@@ -29,6 +29,8 @@ pub async fn reveal_data_folder(app: AppHandle, state: State<'_, AppState>) -> C
 /// bookmarks were exported.
 #[tauri::command]
 pub async fn export_library(state: State<'_, AppState>, format: ExportFormat, path: PathBuf, ids: Option<Vec<String>>) -> CmdResult<usize> {
+    let data_dir = state.db_path.parent().map(PathBuf::from).unwrap_or_default();
+    data::check_export_path(&path, format, &data_dir)?;
     data::export(&state.db(), format, &path, ids.as_deref())
 }
 
@@ -87,6 +89,9 @@ fn source(state: &AppState, name: Option<String>, path: Option<PathBuf>) -> CmdR
     match (name, path) {
         (Some(n), _) => data::backup_path(&state.backups, &n),
         (None, Some(p)) => {
+            if !p.extension().is_some_and(|e| e.eq_ignore_ascii_case("db")) {
+                return Err(Error::Validation("Choose a Magpie backup (.db) file.".into()));
+            }
             if p.canonicalize().ok() == state.db_path.canonicalize().ok() {
                 return Err(Error::Validation("That's the library Magpie is using now.".into()));
             }
