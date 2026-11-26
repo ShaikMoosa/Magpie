@@ -130,10 +130,11 @@ pub async fn open_bookmark(
         if risky && !confirmed {
             return Ok(OpenOutcome { opened: false, bookmark: current });
         }
+        bookmarks::openable_url(&current)?;
         bookmarks::record_open(&db, &id)?
     };
     app.opener()
-        .open_url(&bookmark.url, None::<&str>)
+        .open_url(bookmarks::openable_url(&bookmark)?, None::<&str>)
         .map_err(|_| Error::Validation("Couldn't open your default browser.".into()))?;
     Ok(OpenOutcome { opened: true, bookmark })
 }
@@ -156,7 +157,7 @@ pub async fn open_private(state: State<'_, AppState>, id: String, confirmed: boo
         }
         current
     };
-    crate::private_browser::open(&bookmark.url)?;
+    crate::private_browser::open(&bookmarks::openable_url(&bookmark)?)?;
     let bookmark = bookmarks::record_open(&state.db(), &id)?;
     Ok(OpenOutcome { opened: true, bookmark })
 }

@@ -162,6 +162,31 @@ fn write_atomic(path: &Path, contents: &[u8]) -> Result<()> {
     Ok(())
 }
 
+/// Where an export may be written: a file with the format's extension, not a
+/// folder, and not inside Magpie's own data folder (so the database, backups
+/// and cache can't be overwritten).
+pub fn check_export_path(path: &Path, format: ExportFormat, protected: &Path) -> Result<()> {
+    let ext = match format {
+        ExportFormat::Json => "json",
+        ExportFormat::Html => "html",
+        ExportFormat::Csv => "csv",
+    };
+    let bad = |m: &str| Err(Error::Validation(m.into()));
+    if !path.is_absolute() || path.is_dir() {
+        return bad("Choose a file to export to.");
+    }
+    if !path.extension().is_some_and(|e| e.eq_ignore_ascii_case(ext) || (ext == "html" && e.eq_ignore_ascii_case("htm"))) {
+        return bad("The file name must end in the export format's extension.");
+    }
+    let parent = path.parent().and_then(|p| p.canonicalize().ok()).ok_or_else(|| Error::Validation("That folder doesn't exist.".into()))?;
+    if let Ok(protected) = protected.canonicalize() {
+        if parent.starts_with(&protected) {
+            return bad("Choose a folder outside Magpie's data folder.");
+        }
+    }
+    Ok(())
+}
+
 /// Export live bookmarks (or just `only`). Returns how many were written.
 pub fn export(conn: &Connection, format: ExportFormat, path: &Path, only: Option<&[String]>) -> Result<usize> {
     let count = live_bookmarks(conn, only)?.len();
@@ -362,6 +387,9 @@ pub fn inspect_backup(path: &Path) -> Result<BackupSummary> {
         return Err(Error::Validation("That backup was made by a newer version of Magpie. Update Magpie first.".into()));
     }
     let count = |sql: &str| src.query_row(sql, [], |r| r.get::<_, i64>(0)).map_err(|_| bad());
+    if count("SELECT COUNT(*) FROM bookmarks WHERE url NOT LIKE 'http://%' AND url NOT LIKE 'https://%'")? > 0 {
+        return Err(Error::Validation("That backup contains links that aren't web addresses, so it won't be restored.".into()));
+    }
     Ok(BackupSummary {
         bookmarks: count("SELECT COUNT(*) FROM bookmarks WHERE deleted_at IS NULL")?,
         categories: count("SELECT COUNT(*) FROM categories")?,
@@ -604,6 +632,32 @@ mod tests {
         assert_eq!(export(&conn, ExportFormat::Csv, &path, Some(std::slice::from_ref(&first.id))).unwrap(), 1);
         assert_eq!(export(&conn, ExportFormat::Json, &dir.path().join("all.json"), None).unwrap(), 2);
         assert_eq!(fs::read_to_string(&path).unwrap().matches("https://").count(), 1);
+    }
+
+    #[test]
+    fn export_paths_are_checked() {
+        let dir = tempfile::tempdir().unwrap();
+        let data = dir.path().join("appdata");
+        fs::create_dir_all(&data).unwrap();
+        let ok = dir.path().join("out.CSV");
+        assert!(check_export_path(&ok, ExportFormat::Csv, &data).is_ok());
+        assert!(check_export_path(&dir.path().join("x.htm"), ExportFormat::Html, &data).is_ok());
+        assert!(check_export_path(&dir.path().join("x.exe"), ExportFormat::Csv, &data).is_err());
+        assert!(check_export_path(&data.join("magpie.json"), ExportFormat::Json, &data).is_err(), "can't overwrite app data");
+        assert!(check_export_path(dir.path(), ExportFormat::Json, &data).is_err());
+        assert!(check_export_path(Path::new("relative.json"), ExportFormat::Json, &data).is_err());
+        assert!(check_export_path(&dir.path().join("missing").join("x.json"), ExportFormat::Json, &data).is_err());
+    }
+
+    #[test]
+    fn backups_with_non_web_links_are_refused() {
+        let dir = tempfile::tempdir().unwrap();
+        let conn = db::open(&dir.path().join("magpie.db")).unwrap();
+        seed(&conn);
+        conn.execute("UPDATE bookmarks SET url = 'file:///C:/Windows/System32/calc.exe' WHERE deleted_at IS NULL AND url LIKE '%example%'", []).unwrap();
+        let b = create_backup(&conn, &dir.path().join("b"), BackupKind::Manual, 7).unwrap();
+        let err = inspect_backup(&dir.path().join("b").join(&b.name)).unwrap_err().to_string();
+        assert!(err.contains("aren't web addresses"), "{err}");
     }
 
     #[test]

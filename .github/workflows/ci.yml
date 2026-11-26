@@ -60,3 +60,24 @@ jobs:
             src-tauri/target/release/bundle/nsis/*.exe
             src-tauri/target/release/bundle/msi/*.msi
           if-no-files-found: error
+
+  audit:
+    name: Dependency audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Known vulnerabilities in Rust dependencies (RustSec advisory database).
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit
+      - name: Audit Rust dependencies
+        run: |
+          cargo audit --file crates/magpie-core/Cargo.lock
+          cargo audit --file src-tauri/Cargo.lock
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Audit npm dependencies (shipped code only)
+        run: npm audit --omit=dev --audit-level=high

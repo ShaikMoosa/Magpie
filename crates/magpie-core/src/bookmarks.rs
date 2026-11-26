@@ -59,6 +59,19 @@ fn clean(s: Option<String>) -> Option<String> {
     s.map(|s| s.trim().to_string()).filter(|s| !s.is_empty())
 }
 
+/// The URL to hand to the browser. Stored URLs are re-validated because the
+/// database can come from outside the app (a restored backup file), and
+/// Windows would run `file:`, `ms-*:` and other handlers if asked to open them.
+pub fn openable_url(b: &Bookmark) -> Result<String> {
+    let refuse = || Error::Validation("This bookmark's address isn't a web link, so Magpie won't open it.".into());
+    let lower = b.url.to_ascii_lowercase();
+    if !(lower.starts_with("http://") || lower.starts_with("https://")) {
+        return Err(refuse());
+    }
+    // Re-serialised by the URL parser, so what reaches Windows is a clean http(s) URL.
+    Ok(urls::parse(&b.url).map_err(|_| refuse())?.url.to_string())
+}
+
 fn find_duplicate(conn: &Connection, normalized: &str, exclude: Option<&str>) -> Result<Option<String>> {
     Ok(conn
         .query_row(
@@ -653,6 +666,18 @@ pub(crate) fn reindex_category(conn: &Connection, category_id: &str) -> Result<(
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn only_web_links_are_opened() {
+        let c = crate::db::open_in_memory().unwrap();
+        let b = create(&c, NewBookmark { url: "https://example.com/a?b=1".into(), ..Default::default() }).unwrap();
+        assert_eq!(openable_url(&b).unwrap(), "https://example.com/a?b=1");
+        // A crafted database (e.g. a restored backup) can contain anything.
+        for evil in ["file:///C:/Windows/System32/calc.exe", "ms-msdt:/id PCWDiagnostic", "javascript:alert(1)", "\\\\server\\share\\x.exe", "C:\\x.exe", "https ://x"] {
+            c.execute("UPDATE bookmarks SET url = ?2 WHERE id = ?1", params![b.id, evil]).unwrap();
+            assert!(openable_url(&get(&c, &b.id).unwrap()).is_err(), "{evil}");
+        }
+    }
 
     #[test]
     fn add_tags_merges() {
