@@ -50,9 +50,11 @@ pub struct BrowserProfile {
     pub browser: Browser,
     /// Folder name, e.g. `Default` or `Profile 1`.
     pub dir: String,
-    /// Display name from the browser, e.g. `Work`.
+    /// Display name derived from the folder, e.g. `Default profile`.
     pub name: String,
-    pub bookmark_count: usize,
+    /// Not counted during detection (that would mean reading the file); the
+    /// import preview reads it once the user chooses a profile.
+    pub bookmark_count: Option<usize>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -130,51 +132,33 @@ pub fn profile_bookmarks_path(local_app_data: &Path, browser: Browser, profile: 
 }
 
 /// Find Chrome and Edge profiles that have a bookmarks file.
+///
+/// This only checks that the files exist. It deliberately never opens them,
+/// and never reads the browser's `Local State`: that file also holds the key
+/// protecting saved passwords, and a new program reading it (or every
+/// profile's data) right after install looks like a password stealer to
+/// antivirus behaviour monitors. Bookmarks are read only when the user
+/// chooses to import from a profile.
 pub fn detect_profiles(local_app_data: &Path) -> Vec<BrowserProfile> {
     let mut out = Vec::new();
     for browser in [Browser::Chrome, Browser::Edge] {
         let root = browser.user_data(local_app_data);
-        let names = profile_names(&root);
         let Ok(entries) = std::fs::read_dir(&root) else { continue };
         let mut found: Vec<BrowserProfile> = entries
             .flatten()
             .filter_map(|e| {
                 let dir = e.file_name().to_string_lossy().to_string();
-                let file = e.path().join("Bookmarks");
-                if !file.is_file() {
+                if !valid_profile_dir(&dir) || !e.path().join("Bookmarks").is_file() {
                     return None;
                 }
-                let count = std::fs::read_to_string(&file)
-                    .ok()
-                    .and_then(|t| parse_chromium_json(&t).ok())
-                    .map(|v| v.len())
-                    .unwrap_or(0);
-                Some(BrowserProfile {
-                    browser,
-                    name: names.get(&dir).cloned().unwrap_or_else(|| dir.clone()),
-                    dir,
-                    bookmark_count: count,
-                })
+                let name = if dir == "Default" { "Default profile".to_string() } else { dir.clone() };
+                Some(BrowserProfile { browser, name, dir, bookmark_count: None })
             })
             .collect();
         found.sort_by(|a, b| (a.dir != "Default", &a.dir).cmp(&(b.dir != "Default", &b.dir)));
         out.extend(found);
     }
     out
-}
-
-/// Display names from `Local State` → `profile.info_cache`.
-fn profile_names(user_data: &Path) -> HashMap<String, String> {
-    let Ok(text) = std::fs::read_to_string(user_data.join("Local State")) else { return HashMap::new() };
-    let Ok(json) = serde_json::from_str::<serde_json::Value>(&text) else { return HashMap::new() };
-    json.pointer("/profile/info_cache")
-        .and_then(|v| v.as_object())
-        .map(|m| {
-            m.iter()
-                .filter_map(|(dir, info)| Some((dir.clone(), info.get("name")?.as_str()?.to_string())))
-                .collect()
-        })
-        .unwrap_or_default()
 }
 
 // ---------------------------------------------------------------- parsing
@@ -293,7 +277,8 @@ pub fn read_source(source: &ImportSource, local_app_data: &Path) -> Result<(Stri
                     browser.label()
                 ))
             })?;
-            let name = profile_names(&browser.user_data(local_app_data)).get(profile).cloned().unwrap_or_else(|| profile.clone());
+            // Folder name only: `Local State` is never read (see detect_profiles).
+            let name = if profile == "Default" { "Default profile".to_string() } else { profile.clone() };
             Ok((format!("{} — {}", browser.label(), name), browser.label().to_string(), parse_chromium_json(&text)?))
         }
         ImportSource::Html { path } => {
@@ -614,7 +599,7 @@ mod tests {
     }
 
     #[test]
-    fn detects_profiles_with_names() {
+    fn detects_profiles_without_reading_browser_files() {
         let dir = tempfile::tempdir().unwrap();
         let ud = dir.path().join("Google").join("Chrome").join("User Data");
         for p in ["Default", "Profile 1", "System Profile"] {
@@ -622,12 +607,14 @@ mod tests {
         }
         std::fs::write(ud.join("Default").join("Bookmarks"), CHROME).unwrap();
         std::fs::write(ud.join("Profile 1").join("Bookmarks"), CHROME).unwrap();
+        // Unreadable contents prove detection never opens the files.
+        std::fs::write(ud.join("Profile 1").join("Bookmarks"), "not json").unwrap();
         std::fs::write(ud.join("Local State"), r#"{"profile":{"info_cache":{"Profile 1":{"name":"Work"}}}}"#).unwrap();
         let found = detect_profiles(dir.path());
         assert_eq!(found.len(), 2);
-        assert_eq!(found[0].dir, "Default");
-        assert_eq!(found[1].name, "Work");
-        assert_eq!(found[1].bookmark_count, 5);
+        assert_eq!((found[0].dir.as_str(), found[0].name.as_str()), ("Default", "Default profile"));
+        assert_eq!(found[1].name, "Profile 1", "Local State isn't read for display names");
+        assert!(found.iter().all(|p| p.bookmark_count.is_none()));
         assert!(profile_bookmarks_path(dir.path(), Browser::Chrome, "..\\x").is_err());
     }
 
