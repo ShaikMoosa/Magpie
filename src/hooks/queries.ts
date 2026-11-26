@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, errorMessage } from "../lib/api";
 import type { Bookmark, BookmarkQuery, CategoryInput, NewBookmark, UpdateBookmark } from "../lib/types";
 import { toast } from "../store/toast";
@@ -36,6 +36,22 @@ export function useOverrides() {
 
 export function useBookmarks(query: BookmarkQuery) {
   return useQuery({ queryKey: keys.bookmarks(query), queryFn: () => api.listBookmarks(query), placeholderData: (p) => p });
+}
+
+/** Bookmarks per page when browsing; more load as you scroll. */
+export const PAGE_SIZE = 200;
+
+/** Paged bookmark list plus the total number of matches. */
+export function useBookmarkPages(query: BookmarkQuery) {
+  const pages = useInfiniteQuery({
+    queryKey: [...keys.bookmarks(query), "pages"],
+    queryFn: ({ pageParam }) => api.listBookmarks({ ...query, limit: PAGE_SIZE, offset: pageParam }),
+    initialPageParam: 0,
+    getNextPageParam: (last, all) => (last.length === PAGE_SIZE ? all.length * PAGE_SIZE : undefined),
+    placeholderData: keepPreviousData,
+  });
+  const total = useQuery({ queryKey: [...keys.bookmarks(query), "count"], queryFn: () => api.countBookmarks(query), placeholderData: keepPreviousData });
+  return { pages, total: total.data };
 }
 
 export function useCounts() {

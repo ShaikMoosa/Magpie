@@ -144,7 +144,8 @@ function list(q: BookmarkQuery) {
     : by === "most_opened" ? b.openCount - a.openCount
     : +new Date(b.createdAt) - +new Date(a.createdAt),
   );
-  return q.limit ? r.slice(0, q.limit) : r;
+  const from = q.offset ?? 0;
+  return q.limit ? r.slice(from, from + q.limit) : r;
 }
 
 function checkUrl(raw: string, exclude?: string | null) {
@@ -170,6 +171,14 @@ function checkUrl(raw: string, exclude?: string | null) {
 }
 
 export function installMockBackend() {
+  // `?big` adds 5,000 generated bookmarks to try paging and scrolling.
+  if (new URLSearchParams(location.search).has("big")) {
+    const words = ["react", "rust", "design", "figma", "guide", "icons", "motion", "research", "notes", "travel"];
+    for (let i = 0; i < 5000; i++) {
+      const w = (k: number) => words[(i * 7 + k * 13) % words.length];
+      add(`https://example-${i}.dev/${w(1)}`, `${w(0)} ${w(2)} ${w(3)} #${i}`, null, i % 3 ? cats[i % cats.length].id : null, 50 + i);
+    }
+  }
   // `?empty` starts with an empty library (shows the first-run welcome screen).
   if (new URLSearchParams(location.search).has("empty")) {
     marks.length = 0;
@@ -181,6 +190,7 @@ export function installMockBackend() {
     const a = (payload ?? {}) as Record<string, any>;
     switch (cmd) {
       case "list_bookmarks": return list(a.query);
+      case "count_bookmarks": return list({ ...a.query, limit: undefined, offset: undefined }).length;
       case "get_counts": return counts();
       case "check_url": return checkUrl(a.url, a.excludeId);
       case "create_bookmark": {

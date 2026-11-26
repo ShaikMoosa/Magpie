@@ -24,7 +24,7 @@ import {
   X,
 } from "lucide-react";
 import clsx from "clsx";
-import { forwardRef, useEffect, useMemo, useState, type ReactNode } from "react";
+import { forwardRef, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { BookmarkCard, BookmarkCompact, BookmarkRow } from "../components/bookmarks/BookmarkItems";
 import { useBookmarkActions } from "../components/bookmarks/useBookmarkActions";
 import { TopBar } from "../components/layout/TopBar";
@@ -33,7 +33,7 @@ import { AiReviewPanel } from "../components/library/AiReview";
 import { SecurityAlertList, SecurityHeaderAction, SecuritySummary, TrustedSites } from "../components/library/SecurityAlerts";
 import { Button } from "../components/ui/Button";
 import { EmptyState } from "../components/ui/EmptyState";
-import { useAiSettings, useBookmarks, useCategories, useCategorize, useCounts } from "../hooks/queries";
+import { useAiSettings, useBookmarkPages, useCategories, useCategorize, useCounts } from "../hooks/queries";
 import { tint } from "../lib/colors";
 import { plural } from "../lib/format";
 import type { Bookmark, Category, LibraryView, Sort, ViewMode } from "../lib/types";
@@ -232,6 +232,28 @@ function BulkBar({ ids, inTrash, categories }: { ids: string[]; inTrash: boolean
   );
 }
 
+/** Loads the next page when it scrolls into view (with a button as a fallback). */
+function LoadMore({ loading, shown, total, onLoad }: { loading: boolean; shown: number; total: number; onLoad: () => void }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const load = useRef(onLoad);
+  load.current = onLoad;
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const io = new IntersectionObserver((entries) => entries[0]?.isIntersecting && load.current(), { rootMargin: "800px" });
+    io.observe(el);
+    return () => io.disconnect();
+  }, []);
+  return (
+    <div ref={ref} className="flex items-center justify-center gap-3 py-4 text-[13px] text-ink-3">
+      Showing {shown.toLocaleString()} of {total.toLocaleString()}
+      <Button size="sm" disabled={loading} onClick={onLoad}>
+        {loading ? "Loading…" : "Load more"}
+      </Button>
+    </div>
+  );
+}
+
 function groupByDay(items: Bookmark[]) {
   const now = new Date();
   const start = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
@@ -285,7 +307,10 @@ export function Library({ view, categoryId, searchRef }: { view: LibraryView; ca
   const category = categories.find((c) => c.id === categoryId);
   const subcats = categories.filter((c) => c.parentId === categoryId);
   const [filters, setFilters] = useState<FilterState>(NO_FILTERS);
-  const { data: items = EMPTY, isLoading } = useBookmarks({ view, categoryId: categoryId ?? null, search, sort, ...filters });
+  const { pages, total: matchCount } = useBookmarkPages({ view, categoryId: categoryId ?? null, search, sort, ...filters });
+  const items = useMemo(() => pages.data?.pages.flat() ?? EMPTY, [pages.data]);
+  const isLoading = pages.isLoading;
+  const total = matchCount ?? items.length;
   const filtering = activeFilterCount(filters) > 0;
   const ids = [...selection];
   const setVisible = useUi((s) => s.setVisible);
@@ -295,10 +320,10 @@ export function Library({ view, categoryId, searchRef }: { view: LibraryView; ca
   const title = view === "category" ? (category?.name ?? "Category") : meta!.title;
   const subtitle =
     view === "category"
-      ? [category?.description, plural(items.length, "bookmark"), subcats.length ? plural(subcats.length, "subcategory", "subcategories") : null]
+      ? [category?.description, plural(total, "bookmark"), subcats.length ? plural(subcats.length, "subcategory", "subcategories") : null]
           .filter(Boolean)
           .join(" · ")
-      : meta!.sub(view === "trash" ? (counts?.trash ?? items.length) : items.length);
+      : meta!.sub(total);
 
   const crumbs =
     view === "category" ? (
@@ -410,6 +435,9 @@ export function Library({ view, categoryId, searchRef }: { view: LibraryView; ca
           ))
         ) : (
           <BookmarkCollection items={items} categories={categories} mode={viewMode} />
+        )}
+        {pages.hasNextPage && (
+          <LoadMore loading={pages.isFetchingNextPage} shown={items.length} total={total} onLoad={() => void pages.fetchNextPage()} />
         )}
         {view === "security" && <TrustedSites />}
       </div>
