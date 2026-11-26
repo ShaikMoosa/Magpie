@@ -1,0 +1,59 @@
+name: Release
+
+# Push a version tag (e.g. v0.2.0) to build the Windows installers and attach
+# them, with SHA-256 checksums, to a draft GitHub release for review.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    name: Build and publish (Windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install Rust toolchain
+        run: rustup toolchain install
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            src-tauri -> target
+            crates/magpie-core -> target
+
+      - name: Install npm dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Tests
+        run: |
+          npm run typecheck
+          cd crates/magpie-core
+          cargo test --locked
+
+      - name: Build installers
+        run: npx tauri build
+
+      - name: Create draft release with installers
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          $files = @(Get-ChildItem src-tauri/target/release/bundle/nsis/*.exe) + @(Get-ChildItem src-tauri/target/release/bundle/msi/*.msi)
+          $sums = $files | ForEach-Object { "{0}  {1}" -f (Get-FileHash $_ -Algorithm SHA256).Hash.ToLower(), $_.Name }
+          $notes = "## Install`nDownload the ``-setup.exe`` below and run it. Builds aren't code-signed yet: if SmartScreen appears, choose **More info -> Run anyway**.`n`n## Checksums (SHA-256)`n``````n$($sums -join "`n")`n``````"
+          gh release view $env:TAG *> $null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload $env:TAG $files.FullName --clobber
+          } else {
+            gh release create $env:TAG $files.FullName --draft --title "Magpie $($env:TAG.TrimStart('v'))" --notes $notes --generate-notes
+          }

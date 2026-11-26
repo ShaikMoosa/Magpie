@@ -3,6 +3,7 @@
 // and implements just enough of each command to review the UI.
 
 import { mockIPC, mockWindows } from "@tauri-apps/api/mocks";
+import { usePrefs, useUi } from "../store/ui";
 import type { AiConfig, AiSuggestion, Bookmark, BookmarkQuery, Category, CategoryInput, NewBookmark, UpdateBookmark } from "../lib/types";
 
 const now = Date.now();
@@ -169,6 +170,51 @@ function checkUrl(raw: string, exclude?: string | null) {
   };
 }
 
+/**
+ * `?shot=<name>` opens a screen with representative data, for the README
+ * screenshots (docs/screenshots). Dev-only, like the rest of this file.
+ */
+function prepareShot(shot: string) {
+  usePrefs.setState({ welcomeDone: true, accent: "violet" });
+  aiConfig = { ...aiConfig, enabled: true };
+  aiKeys.add("anthropic");
+  secCfg = { ...secCfg, enabled: true, google: true, urlhaus: true };
+  scanKeys.add("google");
+  scanKeys.add("urlhaus");
+  for (const b of marks) {
+    if (b.domain.includes("paypa1")) {
+      b.securityStatus = "dangerous";
+      b.securitySource = "Google Safe Browsing \u00b7 URLhaus \u00b7 Local heuristics";
+      b.securityReasons = ["Google Safe Browsing lists this as phishing or a deceptive site", ...b.securityReasons];
+    } else if (b.securityStatus === "not_checked") {
+      b.securityStatus = "no_threat";
+      b.securitySource = "Google Safe Browsing \u00b7 URLhaus \u00b7 Local heuristics";
+    }
+    if (!b.categoryId && !b.deletedAt && !b.domain.includes("paypa1")) pending.set(b.id, { ...guess(b.url, b.title), createdAt: new Date().toISOString() });
+  }
+  const ui = useUi.getState();
+  switch (shot) {
+    case "library":
+      ui.navigate({ page: "library", view: "all" });
+      break;
+    case "ai":
+      ui.navigate({ page: "library", view: "uncategorized" });
+      break;
+    case "security":
+      ui.navigate({ page: "library", view: "security" });
+      break;
+    case "settings":
+      ui.navigate({ page: "settings", section: "security" });
+      break;
+    case "add":
+      ui.openDialog({ kind: "add-bookmark", url: "https://dribbble.com/shots/popular" });
+      break;
+    case "import":
+      ui.openDialog({ kind: "import", source: "chrome" });
+      break;
+  }
+}
+
 export function installMockBackend() {
   // `?empty` starts with an empty library (shows the first-run welcome screen).
   if (new URLSearchParams(location.search).has("empty")) {
@@ -176,6 +222,8 @@ export function installMockBackend() {
     cats.length = 0;
     localStorage.removeItem("magpie.prefs");
   }
+  const shot = new URLSearchParams(location.search).get("shot");
+  if (shot) setTimeout(() => prepareShot(shot), 0);
   mockWindows("main");
   mockIPC(async (cmd, payload) => {
     const a = (payload ?? {}) as Record<string, any>;
