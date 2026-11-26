@@ -426,9 +426,9 @@ export function installMockBackend() {
       }
       case "detect_browsers":
         return [
-          { browser: "chrome", dir: "Default", name: "Personal", bookmarkCount: 1068 },
-          { browser: "chrome", dir: "Profile 1", name: "Work", bookmarkCount: 0 },
-          { browser: "edge", dir: "Default", name: "Profile 1", bookmarkCount: 2565 },
+          { browser: "chrome", dir: "Default", name: "Default profile", bookmarkCount: null },
+          { browser: "chrome", dir: "Profile 1", name: "Profile 1", bookmarkCount: null },
+          { browser: "edge", dir: "Default", name: "Default profile", bookmarkCount: null },
         ];
       case "plugin:dialog|open": return "C:\\Users\\you\\Downloads\\bookmarks_25_11_2026.html";
       case "preview_import": {

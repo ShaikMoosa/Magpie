@@ -125,7 +125,7 @@ export function ImportDialog({ initial, onClose }: { initial?: Kind; onClose: ()
 
   const forKind = useMemo(() => profiles.filter((p) => p.browser === kind), [profiles, kind]);
   useEffect(() => {
-    if (kind !== "html") setProfile((cur) => (forKind.some((p) => p.dir === cur) ? cur : (forKind.find((p) => p.bookmarkCount > 0) ?? forKind[0])?.dir ?? ""));
+    if (kind !== "html") setProfile((cur) => (forKind.some((p) => p.dir === cur) ? cur : forKind[0]?.dir ?? ""));
   }, [kind, forKind]);
 
   const source: ImportSource | null = kind === "html" ? (htmlPath ? { kind: "html", path: htmlPath } : null) : profile ? { kind: "browser", browser: kind, profile } : null;
@@ -181,7 +181,7 @@ export function ImportDialog({ initial, onClose }: { initial?: Kind; onClose: ()
     if (detecting) return "Looking for profiles…";
     const ps = profiles.filter((p) => p.browser === k);
     if (!ps.length) return "Not found on this PC";
-    return `${plural(ps.length, "profile")} · ${plural(ps.reduce((n, p) => n + p.bookmarkCount, 0), "bookmark")}`;
+    return `${plural(ps.length, "profile")} found`;
   };
 
   const footer =
@@ -283,7 +283,7 @@ export function ImportDialog({ initial, onClose }: { initial?: Kind; onClose: ()
                   >
                     {forKind.map((p) => (
                       <option key={p.dir} value={p.dir}>
-                        {p.name} ({p.dir}) · {plural(p.bookmarkCount, "bookmark")}
+                        {p.name}
                       </option>
                     ))}
                   </select>

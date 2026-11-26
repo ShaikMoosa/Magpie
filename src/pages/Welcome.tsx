@@ -35,14 +35,14 @@ export function Welcome() {
   const openDialog = useUi((s) => s.openDialog);
   const setWelcomeDone = usePrefs((s) => s.setWelcomeDone);
   const { data: profiles = [] } = useQuery({ queryKey: ["browsers"], queryFn: api.detectBrowsers });
-  const best: Kind = profiles.some((p) => p.browser === "chrome" && p.bookmarkCount) ? "chrome" : profiles.some((p) => p.browser === "edge" && p.bookmarkCount) ? "edge" : "html";
+  const best: Kind = profiles.some((p) => p.browser === "chrome") ? "chrome" : profiles.some((p) => p.browser === "edge") ? "edge" : "html";
   const [kind, setKind] = useState<Kind | null>(null);
   const chosen: Kind = kind ?? best;
 
   const sub = (b: BrowserName) => {
     const ps = profiles.filter((p) => p.browser === b);
     if (!ps.length) return "Not found on this PC";
-    return `${plural(ps.length, "profile")} found · about ${plural(ps.reduce((n, p) => n + p.bookmarkCount, 0), "bookmark")}`;
+    return `${plural(ps.length, "profile")} found`;
   };
   const options: { kind: Kind; title: string; sub: string; icon: ReactNode; disabled?: boolean }[] = [
     { kind: "chrome", title: "Import from Google Chrome", sub: sub("chrome"), icon: <Globe />, disabled: !profiles.some((p) => p.browser === "chrome") },

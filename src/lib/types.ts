@@ -150,7 +150,8 @@ export interface BrowserProfile {
   browser: BrowserName;
   dir: string;
   name: string;
-  bookmarkCount: number;
+  /** Not known until the import preview reads the file. */
+  bookmarkCount: number | null;
 }
 
 export type ImportSource = { kind: "browser"; browser: BrowserName; profile: string } | { kind: "html"; path: string };
