@@ -50,7 +50,7 @@ jobs:
         run: |
           $files = @(Get-ChildItem src-tauri/target/release/bundle/nsis/*.exe) + @(Get-ChildItem src-tauri/target/release/bundle/msi/*.msi)
           $sums = $files | ForEach-Object { "{0}  {1}" -f (Get-FileHash $_ -Algorithm SHA256).Hash.ToLower(), $_.Name }
-          $notes = "## Install`nDownload the ``-setup.exe`` below and run it. Builds aren't code-signed yet: if SmartScreen appears, choose **More info -> Run anyway**.`n`n## Checksums (SHA-256)`n``````n$($sums -join "`n")`n``````"
+          $notes = "## Install`nDownload the ``-setup.exe`` below and run it. Builds aren't code-signed yet: if SmartScreen appears, choose **More info -> Run anyway**.`n`n## Checksums (SHA-256)`n```````n$($sums -join "`n")`n``````"
           gh release view $env:TAG *> $null
           if ($LASTEXITCODE -eq 0) {
             gh release upload $env:TAG $files.FullName --clobber
